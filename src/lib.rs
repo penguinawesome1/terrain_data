@@ -6,7 +6,7 @@ mod config;
 
 pub use crate::{
     block::Block,
-    chunk::{ Chunk, ChunkPosition, BlockPosition },
-    world::{ World, BlockAccessError },
-    config::load_blocks,
+    chunk::Chunk,
+    world::{ World, ChunkError, ChunkPosition, BlockPosition },
+    config::{ load_blocks, CliError },
 };

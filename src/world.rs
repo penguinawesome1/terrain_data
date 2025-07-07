@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 use itertools::iproduct;
-use crate::chunk::{ Chunk, BlockPosition, ChunkPosition };
+use thiserror::Error;
+use crate::chunk::Chunk;
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
-        pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, BlockAccessError> {
-            let chunk_pos: ChunkPosition = Chunk::<CW, CH, CD, SD>::block_to_chunk_pos(pos);
-            let local_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::global_to_local_pos(pos);
+        pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkError> {
+            let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
+            let local_pos: BlockPosition = Self::global_to_local_pos(pos);
             Ok(self.chunk(chunk_pos)?.$sub_method(local_pos))
         }
     };
@@ -14,9 +15,9 @@ macro_rules! impl_getter {
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
-        pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), BlockAccessError> {
-            let chunk_pos: ChunkPosition = Chunk::<CW, CH, CD, SD>::block_to_chunk_pos(pos);
-            let local_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::global_to_local_pos(pos);
+        pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkError> {
+            let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
+            let local_pos: BlockPosition = Self::global_to_local_pos(pos);
             self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value);
             Ok(())
         }
@@ -39,9 +40,18 @@ const BLOCK_OFFSETS: [BlockPosition; 6] = [
     BlockPosition::new(0, 0, -1),
 ];
 
-#[derive(Debug)]
-pub enum BlockAccessError {
+/// Stores the two dimensional integer position of a chunk.
+pub type ChunkPosition = glam::IVec2;
+
+/// Stores the three dimensional integer position of a block.
+pub type BlockPosition = glam::IVec3;
+
+#[derive(Debug, Error)]
+pub enum ChunkError {
+    #[error("Chunk at position is currently unloaded")]
     ChunkUnloaded,
+    #[error("A chunk already exists at the specified position")]
+    ChunkAlreadyLoaded,
 }
 
 /// Stores all chunks and marks dirty chunks.
@@ -54,7 +64,7 @@ pub struct World<const CW: usize, const CH: usize, const CD: usize, const SD: us
 impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<CW, CH, CD, SD> {
     impl_getter!(block, block, u8);
     impl_getter!(sky_light, sky_light, u8);
-    impl_getter!(block_light, sky_light, u8);
+    impl_getter!(block_light, block_light, u8);
     impl_getter!(block_exposed, block_exposed, bool);
 
     impl_setter!(set_block, u8, set_block);
@@ -62,42 +72,28 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     impl_setter!(set_block_light, u8, set_block_light);
     impl_setter!(set_block_exposed, bool, set_block_exposed);
 
-    /// Gets a result of an immutable chunk reference.
-    pub fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, BlockAccessError> {
-        self.chunks.get(&pos).ok_or(BlockAccessError::ChunkUnloaded)
-    }
-
     /// Sets chunk at the passed position.
     /// Intended only for the initial creation.
     ///
     /// # Panics
     /// Panics if setting a chunk at an existing chunk position.
-    pub fn set_chunk(&mut self, pos: ChunkPosition, chunk: Chunk<CW, CH, CD, SD>) {
-        let old_chunk: Option<Chunk<CW, CH, CD, SD>> = self.chunks.insert(pos, chunk);
-        debug_assert!(old_chunk.is_none(), "chunk should be absent where setting one");
-    }
-
-    /// Gets a result of a mutable chunk reference.
-    pub fn mut_chunk(
+    #[must_use]
+    pub fn add_chunk(
         &mut self,
-        pos: ChunkPosition
-    ) -> Result<&mut Chunk<CW, CH, CD, SD>, BlockAccessError> {
-        self.chunks.get_mut(&pos).ok_or(BlockAccessError::ChunkUnloaded)
+        pos: ChunkPosition,
+        chunk: Chunk<CW, CH, CD, SD>
+    ) -> Result<(), ChunkError> {
+        if self.is_chunk_at_pos(pos) {
+            return Err(ChunkError::ChunkAlreadyLoaded);
+        }
+
+        self.chunks.insert(pos, chunk);
+        Ok(())
     }
 
     /// Returns bool for if a chunk is found at the passed position.
     pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
         self.chunks.contains_key(&pos)
-    }
-
-    /// Gets an iter of all chunks in a square around the passed origin position.
-    /// Radius of 0 results in 1 chunk.
-    pub fn chunks_in_square(
-        &self,
-        origin: ChunkPosition,
-        radius: u32
-    ) -> impl Iterator<Item = &Chunk<CW, CH, CD, SD>> {
-        Self::positions_in_square(origin, radius).filter_map(|pos| self.chunk(pos).ok())
     }
 
     /// Gets an iter of all chunk positions in a square around the passed origin position.
@@ -130,10 +126,38 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         where I: Iterator<Item = ChunkPosition>
     {
         chunk_positions.flat_map(move |chunk_pos| {
-            let chunk_block_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::chunk_to_block_pos(
-                chunk_pos
-            );
-            Chunk::<CW, CH, CD, SD>::chunk_coords().map(move |pos| chunk_block_pos + pos)
+            let chunk_block_pos: BlockPosition = Self::chunk_to_block_pos(chunk_pos);
+            Self::chunk_coords().map(move |pos| chunk_block_pos + pos)
         })
+    }
+
+    /// Returns an iterator for all block positions.
+    pub fn chunk_coords() -> impl Iterator<Item = BlockPosition> {
+        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(|(x, y, z)|
+            BlockPosition::new(x, y, z)
+        )
+    }
+
+    /// Converts a given chunk position to its zero corner block position.
+    pub const fn chunk_to_block_pos(pos: ChunkPosition) -> BlockPosition {
+        BlockPosition::new(pos.x * (CW as i32), pos.y * (CH as i32), 0)
+    }
+
+    /// Gets the chunk position a block position falls into.
+    pub const fn block_to_chunk_pos(pos: BlockPosition) -> ChunkPosition {
+        ChunkPosition::new(pos.x.div_euclid(CW as i32), pos.y.div_euclid(CH as i32))
+    }
+
+    /// Finds the remainder of a global position using chunk size.
+    pub const fn global_to_local_pos(pos: BlockPosition) -> BlockPosition {
+        BlockPosition::new(pos.x.rem_euclid(CW as i32), pos.y.rem_euclid(CH as i32), pos.z)
+    }
+
+    fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, ChunkError> {
+        self.chunks.get(&pos).ok_or(ChunkError::ChunkUnloaded)
+    }
+
+    fn mut_chunk(&mut self, pos: ChunkPosition) -> Result<&mut Chunk<CW, CH, CD, SD>, ChunkError> {
+        self.chunks.get_mut(&pos).ok_or(ChunkError::ChunkUnloaded)
     }
 }

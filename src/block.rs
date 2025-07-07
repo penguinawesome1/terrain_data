@@ -21,7 +21,7 @@ impl Block {
     const REPLACEABLE_MASK: u8 = 1 << 4;
 
     /// Represents the default block if any are missing or config fails to load.
-    const MISSING: Block = Self::new(false, true, false, true, false);
+    pub const MISSING: Block = Self::new(false, true, false, true, false);
 
     /// Creates a new block given all characteristics of it.
     pub const fn new(
