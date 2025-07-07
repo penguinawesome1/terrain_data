@@ -1,13 +1,8 @@
 use serde::{ Serialize, Deserialize };
 use palette_bitmap::Section;
-use crate::{ chunk::BlockPosition, block::Block };
+use crate::chunk::BlockPosition;
 
 macro_rules! impl_getter {
-    ($name:ident, Block, $section:ident) => {
-        pub fn $name(&self, pos: BlockPosition) -> Block {
-            (self.$section.as_ref().map_or(0, |s| s.item(pos))).into()
-        }
-    };
     ($name:ident, bool, $section:ident) => {
         pub fn $name(&self, pos: BlockPosition) -> bool {
             self.$section.as_ref().map_or(0, |s| s.item(pos)) == 0
@@ -49,12 +44,12 @@ pub struct Subchunk<const W: usize, const H: usize, const D: usize> {
 }
 
 impl<const W: usize, const H: usize, const D: usize> Subchunk<W, H, D> {
-    impl_getter!(block, Block, blocks);
+    impl_getter!(block, u8, blocks);
     impl_getter!(sky_light, u8, sky_light);
     impl_getter!(block_light, u8, block_light);
     impl_getter!(block_exposed, bool, exposed_blocks);
 
-    impl_setter!(set_block, Block, blocks, 4);
+    impl_setter!(set_block, u8, blocks, 4);
     impl_setter!(set_sky_light, u8, sky_light, 5);
     impl_setter!(set_block_light, u8, block_light, 4);
     impl_setter!(set_block_exposed, bool, exposed_blocks, 5);
@@ -76,11 +71,11 @@ mod tests {
         let pos_1: IVec3 = IVec3::new(15, 1, 1);
         let pos_2: IVec3 = IVec3::new(3, 0, 2);
 
-        subchunk.set_block(pos_1, Block::Dirt);
-        subchunk.set_block(pos_1, Block::Grass);
-        subchunk.set_block(pos_2, Block::Air);
+        subchunk.set_block(pos_1, 0);
+        subchunk.set_block(pos_1, 4);
+        subchunk.set_block(pos_2, 5);
 
-        assert_eq!(subchunk.block(pos_1), Block::Grass);
-        assert_eq!(subchunk.block(pos_2), Block::Air);
+        assert_eq!(subchunk.block(pos_1), 4);
+        assert_eq!(subchunk.block(pos_2), 5);
     }
 }

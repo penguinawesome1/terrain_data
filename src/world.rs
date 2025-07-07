@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use itertools::iproduct;
-use crate::{ chunk::{ Chunk, BlockPosition, ChunkPosition }, block::Block };
+use crate::chunk::{ Chunk, BlockPosition, ChunkPosition };
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
@@ -52,12 +52,12 @@ pub struct World<const CW: usize, const CH: usize, const CD: usize, const SD: us
 }
 
 impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<CW, CH, CD, SD> {
-    impl_getter!(block, block, Block);
+    impl_getter!(block, block, u8);
     impl_getter!(sky_light, sky_light, u8);
     impl_getter!(block_light, sky_light, u8);
     impl_getter!(block_exposed, block_exposed, bool);
 
-    impl_setter!(set_block, Block, set_block);
+    impl_setter!(set_block, u8, set_block);
     impl_setter!(set_sky_light, u8, set_sky_light);
     impl_setter!(set_block_light, u8, set_block_light);
     impl_setter!(set_block_exposed, bool, set_block_exposed);

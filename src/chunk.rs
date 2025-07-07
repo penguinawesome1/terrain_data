@@ -1,6 +1,6 @@
 use serde::{ Serialize, Deserialize };
 use itertools::iproduct;
-use crate::{ subchunk::Subchunk, block::Block };
+use crate::subchunk::Subchunk;
 
 macro_rules! impl_getter {
     ($name:ident, $return_type:ty, $sub_method:ident, $default:expr) => {
@@ -53,12 +53,12 @@ pub struct Chunk<const W: usize, const H: usize, const D: usize, const SD: usize
 }
 
 impl<const W: usize, const H: usize, const D: usize, const SD: usize> Chunk<W, H, D, SD> {
-    impl_getter!(block, Block, block, Block::Air);
+    impl_getter!(block, u8, block, 0);
     impl_getter!(sky_light, u8, sky_light, 0);
     impl_getter!(block_light, u8, block_light, 0);
     impl_getter!(block_exposed, bool, block_exposed, false);
 
-    impl_setter!(set_block, Block, set_block, Block::Air);
+    impl_setter!(set_block, u8, set_block, 0);
     impl_setter!(set_sky_light, u8, set_sky_light, 0);
     impl_setter!(set_block_light, u8, set_block_light, 0);
     impl_setter!(set_block_exposed, bool, set_block_exposed, false);
@@ -104,11 +104,11 @@ mod tests {
         let pos_1: BlockPosition = BlockPosition::new(15, 1, 21);
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
 
-        chunk.set_block(pos_1, Block::Dirt);
-        chunk.set_block(pos_1, Block::Grass);
-        chunk.set_block(pos_2, Block::Air);
+        chunk.set_block(pos_1, 2);
+        chunk.set_block(pos_1, 1);
+        chunk.set_block(pos_2, 3);
 
-        assert_eq!(chunk.block(pos_1), Block::Grass);
-        assert_eq!(chunk.block(pos_2), Block::Air);
+        assert_eq!(chunk.block(pos_1), 1);
+        assert_eq!(chunk.block(pos_2), 3);
     }
 }
