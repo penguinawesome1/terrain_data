@@ -10,7 +10,6 @@ pub enum Block {
     Bedrock,
     #[default]
     Missing,
-    Length,
 }
 
 impl Block {
@@ -20,7 +19,7 @@ impl Block {
     /// # Examples
     ///
     /// ```
-    /// use floralcraft::terrain::block::Block;
+    /// use floralcraft_terrain::Block;
     ///
     /// assert_eq!(Block::from_string("air"), Block::Air);
     /// assert_eq!(Block::from_string("bedrock"), Block::Bedrock);
@@ -44,14 +43,13 @@ impl Block {
     /// # Examples
     ///
     /// ```
-    /// use floralcraft::terrain::block::{ BlockDefinition, Block };
+    /// use floralcraft_terrain::Block;
     ///
-    /// let air_block: BlockDefinition = Block::Air.definition();
-    /// let missing_block: BlockDefinition = Block::Missing.definition();
+    /// let air_block = Block::Air.definition();
+    /// let missing_block = Block::Missing.definition();
     ///
     /// assert_eq!(air_block.is_collidable(), false);
     /// assert!(!air_block.is_visible());
-    /// assert_eq!(air_block, missing_block);
     /// ```
     pub const fn definition(&self) -> BlockDefinition {
         match self {
@@ -61,18 +59,19 @@ impl Block {
             Self::Stone => BlockDefinition::STONE,
             Self::Bedrock => BlockDefinition::BEDROCK,
             Self::Missing => BlockDefinition::MISSING,
-            Self::Length => unreachable!(),
         }
     }
 }
 
 impl From<u64> for Block {
     fn from(value: u64) -> Self {
-        let value_u8: u8 = value as u8;
-        if value_u8 < (Self::Length as u8) {
-            unsafe { std::mem::transmute(value_u8) }
-        } else {
-            Self::Missing
+        match value {
+            0 => Self::Air,
+            1 => Self::Grass,
+            2 => Self::Dirt,
+            3 => Self::Stone,
+            4 => Self::Bedrock,
+            _ => Self::Missing,
         }
     }
 }
@@ -149,7 +148,7 @@ impl BlockDefinition {
     /// # Examples
     ///
     /// ```
-    /// use floralcraft::terrain::block::BlockDefinition;
+    /// use floralcraft_terrain::BlockDefinition;
     ///
     /// assert!(!BlockDefinition::AIR.is_visible());
     /// assert!(!BlockDefinition::AIR.is_collidable());
@@ -169,7 +168,7 @@ impl BlockDefinition {
     /// # Examples
     ///
     /// ```
-    /// use floralcraft::terrain::block::BlockDefinition;
+    /// use floralcraft_terrain::BlockDefinition;
     ///
     /// assert!(BlockDefinition::GRASS.is_hoverable());
     /// assert!(!BlockDefinition::AIR.is_hoverable());

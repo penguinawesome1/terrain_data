@@ -1,23 +1,12 @@
-use std::collections::{ HashMap, HashSet };
+use std::collections::HashMap;
 use itertools::iproduct;
-use crate::{
-    chunk::Chunk,
-    coords::{
-        ChunkPosition,
-        BlockPosition,
-        block_to_chunk_pos,
-        global_to_local_pos,
-        chunk_to_block_pos,
-        chunk_offsets,
-    },
-    block::Block,
-};
+use crate::{ chunk::{ Chunk, BlockPosition, ChunkPosition }, block::Block };
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
         pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, BlockAccessError> {
-            let chunk_pos: ChunkPosition = block_to_chunk_pos(pos);
-            let local_pos: BlockPosition = global_to_local_pos(pos);
+            let chunk_pos: ChunkPosition = Chunk::<CW, CH, CD, SD>::block_to_chunk_pos(pos);
+            let local_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::global_to_local_pos(pos);
             Ok(self.chunk(chunk_pos)?.$sub_method(local_pos))
         }
     };
@@ -26,37 +15,55 @@ macro_rules! impl_getter {
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
         pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), BlockAccessError> {
-            let chunk_pos: ChunkPosition = block_to_chunk_pos(pos);
-            let local_pos: BlockPosition = global_to_local_pos(pos);
+            let chunk_pos: ChunkPosition = Chunk::<CW, CH, CD, SD>::block_to_chunk_pos(pos);
+            let local_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::global_to_local_pos(pos);
             self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value);
-            self.mark_chunks_dirty_with_adj(chunk_pos);
             Ok(())
         }
     };
 }
 
-// -- Error Types --
+const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
+    ChunkPosition::new(-1, 0),
+    ChunkPosition::new(1, 0),
+    ChunkPosition::new(0, -1),
+    ChunkPosition::new(0, 1),
+];
+
+const BLOCK_OFFSETS: [BlockPosition; 6] = [
+    BlockPosition::new(1, 0, 0),
+    BlockPosition::new(0, 1, 0),
+    BlockPosition::new(0, 0, 1),
+    BlockPosition::new(-1, 0, 0),
+    BlockPosition::new(0, -1, 0),
+    BlockPosition::new(0, 0, -1),
+];
 
 #[derive(Debug)]
 pub enum BlockAccessError {
     ChunkUnloaded,
 }
 
-// -- World --
-
 /// Stores all chunks and marks dirty chunks.
 /// Allows access and modification to them.
 #[derive(Default)]
-pub struct World {
-    chunks: HashMap<ChunkPosition, Chunk>,
-    dirty_chunks: HashSet<ChunkPosition>,
+pub struct World<const CW: usize, const CH: usize, const CD: usize, const SD: usize> {
+    chunks: HashMap<ChunkPosition, Chunk<CW, CH, CD, SD>>,
 }
 
-impl World {
-    // -- ChunkManagement --
+impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<CW, CH, CD, SD> {
+    impl_getter!(block, block, Block);
+    impl_getter!(sky_light, sky_light, u8);
+    impl_getter!(block_light, sky_light, u8);
+    impl_getter!(block_exposed, block_exposed, bool);
+
+    impl_setter!(set_block, Block, set_block);
+    impl_setter!(set_sky_light, u8, set_sky_light);
+    impl_setter!(set_block_light, u8, set_block_light);
+    impl_setter!(set_block_exposed, bool, set_block_exposed);
 
     /// Gets a result of an immutable chunk reference.
-    pub fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk, BlockAccessError> {
+    pub fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, BlockAccessError> {
         self.chunks.get(&pos).ok_or(BlockAccessError::ChunkUnloaded)
     }
 
@@ -65,13 +72,16 @@ impl World {
     ///
     /// # Panics
     /// Panics if setting a chunk at an existing chunk position.
-    pub fn set_chunk(&mut self, pos: ChunkPosition, chunk: Chunk) {
-        let old_chunk: Option<Chunk> = self.chunks.insert(pos, chunk);
+    pub fn set_chunk(&mut self, pos: ChunkPosition, chunk: Chunk<CW, CH, CD, SD>) {
+        let old_chunk: Option<Chunk<CW, CH, CD, SD>> = self.chunks.insert(pos, chunk);
         debug_assert!(old_chunk.is_none(), "chunk should be absent where setting one");
     }
 
     /// Gets a result of a mutable chunk reference.
-    pub fn mut_chunk(&mut self, pos: ChunkPosition) -> Result<&mut Chunk, BlockAccessError> {
+    pub fn mut_chunk(
+        &mut self,
+        pos: ChunkPosition
+    ) -> Result<&mut Chunk<CW, CH, CD, SD>, BlockAccessError> {
         self.chunks.get_mut(&pos).ok_or(BlockAccessError::ChunkUnloaded)
     }
 
@@ -86,94 +96,44 @@ impl World {
         &self,
         origin: ChunkPosition,
         radius: u32
-    ) -> impl Iterator<Item = &Chunk> {
-        positions_in_square(origin, radius).filter_map(|pos| self.chunk(pos).ok())
+    ) -> impl Iterator<Item = &Chunk<CW, CH, CD, SD>> {
+        Self::positions_in_square(origin, radius).filter_map(|pos| self.chunk(pos).ok())
     }
 
-    // -- Block Management --
-
-    impl_getter!(block, block, Block);
-    impl_getter!(sky_light, sky_light, u8);
-    impl_getter!(block_light, sky_light, u8);
-    impl_getter!(block_exposed, block_exposed, bool);
-
-    impl_setter!(set_block, Block, set_block);
-    impl_setter!(set_sky_light, u8, set_sky_light);
-    impl_setter!(set_block_light, u8, set_block_light);
-    impl_setter!(set_block_exposed, bool, set_block_exposed);
-
-    // -- Dirty Chunk Management --
-
-    /// Marks chunks touching the sides as dirty.
-    /// Includes passed position.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use floralcraft::terrain::chunk::ChunkPosition;
-    /// use floralcraft::terrain::World;
-    ///
-    /// let mut world: World = World::default();
-    /// let pos: ChunkPosition = ChunkPosition::new(0, 0);
-    ///
-    /// world.mark_chunks_dirty_with_adj(pos);
-    /// ```
-    pub fn mark_chunks_dirty_with_adj(&mut self, pos: ChunkPosition) {
-        self.dirty_chunks.insert(pos);
-        for adj_pos in chunk_offsets(pos) {
-            self.dirty_chunks.insert(adj_pos);
-        }
+    /// Gets an iter of all chunk positions in a square around the passed origin position.
+    /// Radius of 0 results in 1 position.
+    pub fn positions_in_square(
+        origin: ChunkPosition,
+        radius: u32
+    ) -> impl Iterator<Item = ChunkPosition> {
+        let radius: i32 = radius as i32;
+        iproduct!(-radius..=radius, -radius..=radius).map(
+            move |(x, y)| origin + ChunkPosition::new(x, y)
+        )
     }
 
-    /// Gets and clears dirty chunks.
-    /// Only returns valid chunk positions.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// use std::collections::HashSet;
-    /// use floralcraft::terrain::chunk::ChunkPosition;
-    /// use floralcraft::terrain::World;
-    ///
-    /// let mut world: World = World::default();
-    /// let pos: ChunkPosition = ChunkPosition::new(0, 0);
-    ///
-    /// world.mark_chunks_dirty_with_adj(pos);
-    ///
-    /// let dirty_chunks = world.consume_dirty_chunks();
-    /// assert!(dirty_chunks.next().is_some());
-    ///
-    /// let dirty_chunks = world.consume_dirty_chunks();
-    /// assert!(dirty_chunks.next().is_none());
-    /// ```
-    pub fn consume_dirty_chunks(&mut self) -> impl Iterator<Item = ChunkPosition> {
-        std::mem
-            ::take(&mut self.dirty_chunks)
-            .into_iter()
-            .filter(|&pos| self.is_chunk_at_pos(pos))
+    /// Returns all adjacent chunk offsets.
+    pub fn chunk_offsets(pos: ChunkPosition) -> impl Iterator<Item = ChunkPosition> {
+        CHUNK_ADJ_OFFSETS.iter().map(move |offset| { pos + offset })
     }
-}
 
-// -- Helper Functions --
+    /// Returns all adjacent block offsets.
+    /// Filters out illegal vertical offsets.
+    pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
+        BLOCK_OFFSETS.iter()
+            .map(move |offset| { pos + offset })
+            .filter(|adj_pos| { adj_pos.z >= 0 && adj_pos.z < (CD as i32) })
+    }
 
-/// Gets an iter of all chunk positions in a square around the passed origin position.
-/// Radius of 0 results in 1 position.
-pub fn positions_in_square(
-    origin: ChunkPosition,
-    radius: u32
-) -> impl Iterator<Item = ChunkPosition> {
-    let radius: i32 = radius as i32;
-    iproduct!(-radius..=radius, -radius..=radius).map(
-        move |(x, y)| origin + ChunkPosition::new(x, y)
-    )
-}
-
-/// Returns an iter for every global position found in the passed chunk positions.
-pub fn global_coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
-    where I: Iterator<Item = ChunkPosition>
-{
-    chunk_positions.flat_map(move |chunk_pos| {
-        let chunk_block_pos: BlockPosition = chunk_to_block_pos(chunk_pos);
-        Chunk::chunk_coords().map(move |pos| chunk_block_pos + pos)
-    })
+    /// Returns an iter for every global position found in the passed chunk positions.
+    pub fn global_coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
+        where I: Iterator<Item = ChunkPosition>
+    {
+        chunk_positions.flat_map(move |chunk_pos| {
+            let chunk_block_pos: BlockPosition = Chunk::<CW, CH, CD, SD>::chunk_to_block_pos(
+                chunk_pos
+            );
+            Chunk::<CW, CH, CD, SD>::chunk_coords().map(move |pos| chunk_block_pos + pos)
+        })
+    }
 }

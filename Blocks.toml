@@ -1,0 +1,47 @@
+[[blocks]]
+name = "Air"
+is_hoverable = false
+is_visible = false
+is_breakable = false
+is_collidable = false
+is_replaceable = true
+
+[[blocks]]
+name = "Grass"
+is_hoverable = true
+is_visible = true
+is_breakable = true
+is_collidable = true
+is_replaceable = false
+
+[[blocks]]
+name = "Dirt"
+is_hoverable = true
+is_visible = true
+is_breakable = true
+is_collidable = true
+is_replaceable = false
+
+[[blocks]]
+name = "Stone"
+is_hoverable = true
+is_visible = true
+is_breakable = true
+is_collidable = true
+is_replaceable = false
+
+[[blocks]]
+name = "Bedrock"
+is_hoverable = true
+is_visible = true
+is_breakable = false
+is_collidable = true
+is_replaceable = false
+
+[[blocks]]
+name = "Missing"
+is_hoverable = false
+is_visible = true
+is_breakable = false
+is_collidable = true
+is_replaceable = false

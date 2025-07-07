@@ -1,28 +1,21 @@
 use serde::{ Serialize, Deserialize };
-use crate::{ coords::BlockPosition, block::Block };
-
-pub const SUBCHUNK_WIDTH: usize = 16;
-pub const SUBCHUNK_HEIGHT: usize = 16;
-pub const SUBCHUNK_DEPTH: usize = 16;
-
-type ChunkSection = palette_bitmap::Section<SUBCHUNK_WIDTH, SUBCHUNK_HEIGHT, SUBCHUNK_DEPTH>;
+use palette_bitmap::Section;
+use crate::{ chunk::BlockPosition, block::Block };
 
 macro_rules! impl_getter {
     ($name:ident, Block, $section:ident) => {
         pub fn $name(&self, pos: BlockPosition) -> Block {
-            (self.$section.as_ref().map_or(0, |section| section.item(pos))).into()
+            (self.$section.as_ref().map_or(0, |s| s.item(pos))).into()
         }
     };
-
     ($name:ident, bool, $section:ident) => {
         pub fn $name(&self, pos: BlockPosition) -> bool {
-            self.$section.as_ref().map_or(0, |section| section.item(pos)) == 0
+            self.$section.as_ref().map_or(0, |s| s.item(pos)) == 0
         }
     };
-
     ($name:ident, $return_type:ty, $section:ident) => {
         pub fn $name(&self, pos: BlockPosition) -> $return_type {
-            self.$section.as_ref().map_or(0, |section| section.item(pos)) as $return_type
+            self.$section.as_ref().map_or(0, |s| s.item(pos)) as $return_type
         }
     };
 }
@@ -35,8 +28,8 @@ macro_rules! impl_setter {
                 return; // return is placement is redundant
             }
 
-            let section: &mut ChunkSection = self.$section.get_or_insert_with(
-                || ChunkSection::new($bits_per_item) // create new section if needed
+            let section: &mut Section<W, H, D> = self.$section.get_or_insert_with(
+                || Section::new($bits_per_item) // create new section if needed
             );
             section.set_item(pos, value_u64);
 
@@ -48,14 +41,14 @@ macro_rules! impl_setter {
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
-pub struct Subchunk {
-    blocks: Option<ChunkSection>,
-    sky_light: Option<ChunkSection>,
-    block_light: Option<ChunkSection>,
-    exposed_blocks: Option<ChunkSection>,
+pub struct Subchunk<const W: usize, const H: usize, const D: usize> {
+    blocks: Option<Section<W, H, D>>,
+    sky_light: Option<Section<W, H, D>>,
+    block_light: Option<Section<W, H, D>>,
+    exposed_blocks: Option<Section<W, H, D>>,
 }
 
-impl Subchunk {
+impl<const W: usize, const H: usize, const D: usize> Subchunk<W, H, D> {
     impl_getter!(block, Block, blocks);
     impl_getter!(sky_light, u8, sky_light);
     impl_getter!(block_light, u8, block_light);
@@ -79,7 +72,7 @@ mod tests {
 
     #[test]
     fn test_set_and_get_block() {
-        let mut subchunk: Subchunk = Subchunk::default();
+        let mut subchunk: Subchunk<16, 16, 16> = Subchunk::default();
         let pos_1: IVec3 = IVec3::new(15, 1, 1);
         let pos_2: IVec3 = IVec3::new(3, 0, 2);
 
