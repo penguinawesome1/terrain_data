@@ -7,7 +7,7 @@ const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
     ChunkPosition::new(0, 1),
 ];
 
-pub const BLOCK_OFFSETS: [BlockPosition; 6] = [
+const BLOCK_OFFSETS: [BlockPosition; 6] = [
     BlockPosition::new(1, 0, 0),
     BlockPosition::new(0, 1, 0),
     BlockPosition::new(0, 0, 1),
