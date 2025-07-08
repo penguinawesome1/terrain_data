@@ -37,6 +37,7 @@ impl Block {
             ((is_breakable as u8) * Self::BREAKABLE_MASK) |
             ((is_collidable as u8) * Self::COLLIDABLE_MASK) |
             ((is_replaceable as u8) * Self::REPLACEABLE_MASK);
+        
         Self { data }
     }
 
@@ -45,4 +46,10 @@ impl Block {
     impl_getter!(is_breakable, Self::BREAKABLE_MASK);
     impl_getter!(is_collidable, Self::COLLIDABLE_MASK);
     impl_getter!(is_replaceable, Self::REPLACEABLE_MASK);
+}
+
+impl Default for Block {
+    fn default() -> Self {
+        Block::MISSING
+    }
 }
