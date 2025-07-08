@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "block_dictionary"
+version = "0.1.0"
+source = "git+https://github.com/penguinawesome1/block_dictionary.git?branch=main#5c4bfb7805cf64b51d064ffba9134f4400f7a944"
+dependencies = [
+ "indexmap",
+ "serde",
+ "thiserror",
+ "toml",
+]
+
+[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -18,13 +29,12 @@ checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 name = "floralcraft_terrain"
 version = "0.1.0"
 dependencies = [
+ "block_dictionary",
  "glam",
- "indexmap",
  "itertools",
  "palette_bitmap",
  "serde",
  "thiserror",
- "toml",
 ]
 
 [[package]]

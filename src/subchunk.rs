@@ -52,7 +52,7 @@ impl<const W: usize, const H: usize, const D: usize> Subchunk<W, H, D> {
     impl_setter!(set_block, u8, blocks, 4);
     impl_setter!(set_sky_light, u8, sky_light, 5);
     impl_setter!(set_block_light, u8, block_light, 4);
-    impl_setter!(set_block_exposed, bool, exposed_blocks, 5);
+    impl_setter!(set_block_exposed, bool, exposed_blocks, 6);
 
     /// Returns a bool for if all sections are empty.
     pub(crate) fn is_empty(&self) -> bool {
