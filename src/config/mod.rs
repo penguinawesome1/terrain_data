@@ -1,6 +1,6 @@
 use serde::Deserialize;
 use thiserror::Error;
-use std::collections::HashMap;
+use indexmap::IndexMap;
 use std::fs;
 use std::io;
 use std::num;
@@ -24,10 +24,7 @@ pub fn load_blocks(path: &str) -> Result<Vec<Block>, CliError> {
     let contents: String = fs::read_to_string(path)?;
     let block_toml_map: BlockTomlMap = toml::from_str(&contents)?;
 
-    let mut named_toml_blocks: Vec<(String, BlockToml)> = block_toml_map.blocks
-        .into_iter()
-        .collect();
-    named_toml_blocks.sort_by(|(name_a, _), (name_b, _)| name_a.cmp(name_b));
+    let named_toml_blocks: Vec<(String, BlockToml)> = block_toml_map.blocks.into_iter().collect();
 
     named_toml_blocks
         .into_iter()
@@ -45,7 +42,7 @@ pub fn load_blocks(path: &str) -> Result<Vec<Block>, CliError> {
 #[derive(Deserialize)]
 struct BlockTomlMap {
     #[serde(flatten)]
-    blocks: HashMap<String, BlockToml>,
+    blocks: IndexMap<String, BlockToml>,
 }
 
 #[derive(Deserialize)]
