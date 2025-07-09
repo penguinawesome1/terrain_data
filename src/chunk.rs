@@ -1,6 +1,6 @@
 use serde::{ Serialize, Deserialize };
 use crate::subchunk::Subchunk;
-use crate::world::BlockPosition;
+use crate::BlockPosition;
 
 // number of stacked subchunks in one chunk
 const NUM_SUBCHUNKS: usize = 4;

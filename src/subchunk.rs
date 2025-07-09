@@ -1,6 +1,6 @@
 use serde::{ Serialize, Deserialize };
 use palette_bitmap::Section;
-use crate::world::BlockPosition;
+use crate::BlockPosition;
 
 macro_rules! impl_getter {
     ($name:ident, bool, $section:ident) => {
