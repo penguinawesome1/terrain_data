@@ -6,6 +6,22 @@ use itertools::iproduct;
 use thiserror::Error;
 use crate::chunk::Chunk;
 
+const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
+    ChunkPosition::new(-1, 0),
+    ChunkPosition::new(1, 0),
+    ChunkPosition::new(0, -1),
+    ChunkPosition::new(0, 1),
+];
+
+const BLOCK_OFFSETS: [BlockPosition; 6] = [
+    BlockPosition::new(1, 0, 0),
+    BlockPosition::new(0, 1, 0),
+    BlockPosition::new(0, 0, 1),
+    BlockPosition::new(-1, 0, 0),
+    BlockPosition::new(0, -1, 0),
+    BlockPosition::new(0, 0, -1),
+];
+
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
         pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkError> {
@@ -26,22 +42,6 @@ macro_rules! impl_setter {
         }
     };
 }
-
-const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
-    ChunkPosition::new(-1, 0),
-    ChunkPosition::new(1, 0),
-    ChunkPosition::new(0, -1),
-    ChunkPosition::new(0, 1),
-];
-
-const BLOCK_OFFSETS: [BlockPosition; 6] = [
-    BlockPosition::new(1, 0, 0),
-    BlockPosition::new(0, 1, 0),
-    BlockPosition::new(0, 0, 1),
-    BlockPosition::new(-1, 0, 0),
-    BlockPosition::new(0, -1, 0),
-    BlockPosition::new(0, 0, -1),
-];
 
 /// Stores the two dimensional integer position of a chunk.
 pub type ChunkPosition = glam::IVec2;
