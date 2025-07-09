@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "block_dictionary"
 version = "0.1.0"
-source = "git+https://github.com/penguinawesome1/block_dictionary.git?branch=main#5c4bfb7805cf64b51d064ffba9134f4400f7a944"
+source = "git+https://github.com/penguinawesome1/block_dictionary.git?branch=main#173fa3fa5306d1b4392513a7ace80ae2ae1dce38"
 dependencies = [
  "indexmap",
  "serde",
@@ -81,10 +81,11 @@ checksum = "32a282da65faaf38286cf3be983213fcf1d2e2a58700e808f83f4ea9a4804bc0"
 [[package]]
 name = "palette_bitmap"
 version = "0.1.0"
-source = "git+https://github.com/penguinawesome1/palette_bitmap.git?branch=main#4bd47bfd7b1551f39661fbd0d145faa730a775cf"
+source = "git+https://github.com/penguinawesome1/palette_bitmap.git?branch=main#7d329dee1e2ff3bdf4ef1043c1b5509e909df0b7"
 dependencies = [
  "glam",
  "serde",
+ "thiserror",
 ]
 
 [[package]]

@@ -5,21 +5,21 @@ use crate::BlockPosition;
 macro_rules! impl_getter {
     ($name:ident, bool, $section:ident) => {
         #[inline]
-        pub(crate) fn $name(&self, pos: BlockPosition) -> bool {
-            self.$section.as_ref().map_or(0, |s| s.item(pos)) == 0
+        pub(crate) unsafe fn $name(&self, pos: BlockPosition) -> bool {
+            self.$section.as_ref().map_or(0, |s| unsafe { s.item_unchecked(pos) }) == 0
         }
     };
     ($name:ident, $return_type:ty, $section:ident) => {
         #[inline]
-        pub(crate) fn $name(&self, pos: BlockPosition) -> $return_type {
-            self.$section.as_ref().map_or(0, |s| s.item(pos)) as $return_type
+        pub(crate) unsafe fn $name(&self, pos: BlockPosition) -> $return_type {
+            self.$section.as_ref().map_or(0, |s| unsafe { s.item_unchecked(pos) }) as $return_type
         }
     };
 }
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $section:ident, $bits_per_item:expr) => {
-        pub(crate) fn $name(&mut self, pos: BlockPosition, value: $value_type) {
+        pub(crate) unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) {
             let value_u64: u64 = value.into();
             if value_u64 == 0 && self.$section.is_none() {
                 return; // return is placement is redundant
@@ -28,7 +28,7 @@ macro_rules! impl_setter {
             let section: &mut Section<W, H, D> = self.$section.get_or_insert_with(
                 || Section::new($bits_per_item) // create new section if needed
             );
-            section.set_item(pos, value_u64);
+            unsafe { section.set_item_unchecked(pos, value_u64); }
 
             if section.is_empty() {
                 self.$section = None; // convert empty section to none
@@ -74,11 +74,13 @@ mod tests {
         let pos_1: IVec3 = IVec3::new(15, 1, 1);
         let pos_2: IVec3 = IVec3::new(3, 0, 2);
 
-        subchunk.set_block(pos_1, 0);
-        subchunk.set_block(pos_1, 4);
-        subchunk.set_block(pos_2, 5);
+        unsafe {
+            subchunk.set_block(pos_1, 0);
+            subchunk.set_block(pos_1, 4);
+            subchunk.set_block(pos_2, 5);
 
-        assert_eq!(subchunk.block(pos_1), 4);
-        assert_eq!(subchunk.block(pos_2), 5);
+            assert_eq!(subchunk.block(pos_1), 4);
+            assert_eq!(subchunk.block(pos_2), 5);
+        }
     }
 }

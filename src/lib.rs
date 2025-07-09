@@ -24,20 +24,20 @@ const BLOCK_OFFSETS: [BlockPosition; 6] = [
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
-        pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkError> {
+        pub unsafe fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            Ok(self.chunk(chunk_pos)?.$sub_method(local_pos))
+            Ok(unsafe { self.chunk(chunk_pos)?.$sub_method(local_pos) })
         }
     };
 }
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
-        pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkError> {
+        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value);
+            unsafe { self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value); }
             Ok(())
         }
     };
