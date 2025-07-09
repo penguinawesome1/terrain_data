@@ -72,21 +72,15 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     impl_setter!(set_block_light, u8, set_block_light);
     impl_setter!(set_block_exposed, bool, set_block_exposed);
 
-    /// Sets chunk at the passed position.
-    /// Intended only for the initial creation.
-    ///
-    /// # Panics
-    /// Panics if setting a chunk at an existing chunk position.
+    /// Sets new blank chunk at the passed position.
+    /// Returns an error if a chunk is already at the position.
     #[must_use]
-    pub fn add_chunk(
-        &mut self,
-        pos: ChunkPosition,
-        chunk: Chunk<CW, CH, CD, SD>
-    ) -> Result<(), ChunkError> {
+    pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkError> {
         if self.is_chunk_at_pos(pos) {
             return Err(ChunkError::ChunkAlreadyLoaded);
         }
 
+        let chunk: Chunk<CW, CH, CD, SD> = Chunk::default();
         self.chunks.insert(pos, chunk);
         Ok(())
     }
