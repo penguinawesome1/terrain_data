@@ -109,12 +109,14 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     }
 
     /// Returns all adjacent chunk offsets.
+    #[inline]
     pub fn chunk_offsets(pos: ChunkPosition) -> impl Iterator<Item = ChunkPosition> {
         CHUNK_ADJ_OFFSETS.iter().map(move |offset| { pos + offset })
     }
 
     /// Returns all adjacent block offsets.
     /// Filters out illegal vertical offsets.
+    #[inline]
     pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
         BLOCK_OFFSETS.iter()
             .map(move |offset| { pos + offset })
@@ -139,6 +141,7 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     }
 
     /// Converts a given chunk position to its zero corner block position.
+    #[inline]
     pub const fn chunk_to_block_pos(pos: ChunkPosition) -> BlockPosition {
         BlockPosition::new(pos.x * (CW as i32), pos.y * (CH as i32), 0)
     }
@@ -149,14 +152,17 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     }
 
     /// Finds the remainder of a global position using chunk size.
+    #[inline]
     pub const fn global_to_local_pos(pos: BlockPosition) -> BlockPosition {
         BlockPosition::new(pos.x.rem_euclid(CW as i32), pos.y.rem_euclid(CH as i32), pos.z)
     }
 
+    #[inline]
     fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, ChunkError> {
         self.chunks.get(&pos).ok_or(ChunkError::ChunkUnloaded)
     }
 
+    #[inline]
     fn mut_chunk(&mut self, pos: ChunkPosition) -> Result<&mut Chunk<CW, CH, CD, SD>, ChunkError> {
         self.chunks.get_mut(&pos).ok_or(ChunkError::ChunkUnloaded)
     }

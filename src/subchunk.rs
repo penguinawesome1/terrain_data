@@ -4,11 +4,13 @@ use crate::world::BlockPosition;
 
 macro_rules! impl_getter {
     ($name:ident, bool, $section:ident) => {
+        #[inline]
         pub(crate) fn $name(&self, pos: BlockPosition) -> bool {
             self.$section.as_ref().map_or(0, |s| s.item(pos)) == 0
         }
     };
     ($name:ident, $return_type:ty, $section:ident) => {
+        #[inline]
         pub(crate) fn $name(&self, pos: BlockPosition) -> $return_type {
             self.$section.as_ref().map_or(0, |s| s.item(pos)) as $return_type
         }
@@ -55,6 +57,7 @@ impl<const W: usize, const H: usize, const D: usize> Subchunk<W, H, D> {
     impl_setter!(set_block_exposed, bool, exposed_blocks, 6);
 
     /// Returns a bool for if all sections are empty.
+    #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.blocks.is_none()
     }

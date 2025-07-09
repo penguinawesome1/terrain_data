@@ -7,6 +7,7 @@ const NUM_SUBCHUNKS: usize = 4;
 
 macro_rules! impl_getter {
     ($name:ident, $return_type:ty, $sub_method:ident, $default:expr) => {
+        #[inline]
         pub(crate) fn $name(&self, pos: BlockPosition) -> $return_type {
             let index: usize = Self::subchunk_index(pos.z);
 
@@ -58,10 +59,12 @@ impl<const W: usize, const H: usize, const D: usize, const SD: usize> Chunk<W, H
     impl_setter!(set_block_light, u8, set_block_light, 0);
     impl_setter!(set_block_exposed, bool, set_block_exposed, false);
 
+    #[inline]
     const fn subchunk_index(pos_z: i32) -> usize {
         (pos_z as usize).div_euclid(SD)
     }
 
+    #[inline]
     const fn local_to_sub(pos: BlockPosition) -> BlockPosition {
         BlockPosition::new(pos.x, pos.y, pos.z.rem_euclid(SD as i32))
     }
