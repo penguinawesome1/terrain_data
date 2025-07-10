@@ -125,19 +125,20 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     }
 
     /// Returns an iter for every global position found in the passed chunk positions.
-    pub fn global_coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
+    pub fn coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
         where I: Iterator<Item = ChunkPosition>
     {
         chunk_positions.flat_map(move |chunk_pos| {
-            let chunk_block_pos: BlockPosition = Self::chunk_to_block_pos(chunk_pos);
-            Self::chunk_coords().map(move |pos| chunk_block_pos + pos)
+            Self::chunk_coords(chunk_pos).map(move |pos| pos)
         })
     }
 
-    /// Returns an iterator for all block positions.
-    pub fn chunk_coords() -> impl Iterator<Item = BlockPosition> {
-        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(|(x, y, z)|
-            BlockPosition::new(x, y, z)
+    /// Returns an iter for all global block positions in the chunk.
+    pub fn chunk_coords(pos: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
+        let chunk_block_pos: BlockPosition = Self::chunk_to_block_pos(pos);
+
+        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(
+            move |(x, y, z)| chunk_block_pos + BlockPosition::new(x, y, z)
         )
     }
 
