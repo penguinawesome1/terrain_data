@@ -2,6 +2,8 @@ mod chunk;
 mod subchunk;
 
 use std::collections::HashMap;
+use std::hash::BuildHasherDefault;
+use ahash::AHasher;
 use std::collections::hash_map::Entry;
 use itertools::iproduct;
 use thiserror::Error;
@@ -62,7 +64,7 @@ pub enum ChunkError {
 /// Allows access and modification to them.
 #[derive(Default)]
 pub struct World<const CW: usize, const CH: usize, const CD: usize, const SD: usize> {
-    chunks: HashMap<ChunkPosition, Chunk<CW, CH, CD, SD>>,
+    chunks: HashMap<ChunkPosition, Chunk<CW, CH, CD, SD>, BuildHasherDefault<AHasher>>,
 }
 
 impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<CW, CH, CD, SD> {
