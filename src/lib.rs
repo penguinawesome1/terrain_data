@@ -2,6 +2,7 @@ mod chunk;
 mod subchunk;
 
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use itertools::iproduct;
 use thiserror::Error;
 use crate::chunk::Chunk;
@@ -79,13 +80,14 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     /// Returns an error if a chunk is already at the position.
     #[must_use]
     pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkError> {
-        if self.is_chunk_at_pos(pos) {
-            return Err(ChunkError::ChunkAlreadyLoaded);
+        match self.chunks.entry(pos) {
+            Entry::Occupied(_) => { Err(ChunkError::ChunkAlreadyLoaded) }
+            Entry::Vacant(entry) => {
+                let chunk: Chunk<CW, CH, CD, SD> = Chunk::default();
+                entry.insert(chunk);
+                Ok(())
+            }
         }
-
-        let chunk: Chunk<CW, CH, CD, SD> = Chunk::default();
-        self.chunks.insert(pos, chunk);
-        Ok(())
     }
 
     /// Returns bool for if a chunk is found at the passed position.
