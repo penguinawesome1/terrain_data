@@ -92,6 +92,24 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         }
     }
 
+    /// Fill one entire chunk with any local positions block pairs passed in.
+    #[must_use]
+    pub unsafe fn decorate_chunk<T>(
+        &mut self,
+        pos: ChunkPosition,
+        block_set: T
+    ) -> Result<(), ChunkError>
+        where T: Iterator<Item = (BlockPosition, u8)>
+    {
+        let chunk: &mut Chunk<CW, CH, CD, SD> = self.mut_chunk(pos)?;
+
+        unsafe {
+            block_set.for_each(|(pos, block)| chunk.set_block(pos, block));
+        }
+
+        Ok(())
+    }
+
     /// Returns bool for if a chunk is found at the passed position.
     pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
         self.chunks.contains_key(&pos)
