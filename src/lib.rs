@@ -27,7 +27,7 @@ const BLOCK_OFFSETS: [BlockPosition; 6] = [
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
-        pub unsafe fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkError> {
+        pub unsafe fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkAccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
             Ok(unsafe { self.chunk(chunk_pos)?.$sub_method(local_pos) })
@@ -37,7 +37,7 @@ macro_rules! impl_getter {
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
-        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkError> {
+        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkAccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
             unsafe { self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value); }
@@ -53,9 +53,13 @@ pub type ChunkPosition = glam::IVec2;
 pub type BlockPosition = glam::IVec3;
 
 #[derive(Debug, Error)]
-pub enum ChunkError {
+pub enum ChunkAccessError {
     #[error("Chunk at position is currently unloaded")]
     ChunkUnloaded,
+}
+
+#[derive(Debug, Error)]
+pub enum ChunkOverwriteError {
     #[error("A chunk already exists at the specified position")]
     ChunkAlreadyLoaded,
 }
@@ -81,9 +85,9 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     /// Sets new blank chunk at the passed position.
     /// Returns an error if a chunk is already at the position.
     #[must_use]
-    pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkError> {
+    pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
         match self.chunks.entry(pos) {
-            Entry::Occupied(_) => { Err(ChunkError::ChunkAlreadyLoaded) }
+            Entry::Occupied(_) => { Err(ChunkOverwriteError::ChunkAlreadyLoaded) }
             Entry::Vacant(entry) => {
                 let chunk: Chunk<CW, CH, CD, SD> = Chunk::default();
                 entry.insert(chunk);
@@ -98,7 +102,7 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         &mut self,
         pos: ChunkPosition,
         block_set: T
-    ) -> Result<(), ChunkError>
+    ) -> Result<(), ChunkAccessError>
         where T: Iterator<Item = (BlockPosition, u8)>
     {
         let chunk: &mut Chunk<CW, CH, CD, SD> = self.mut_chunk(pos)?;
@@ -178,12 +182,15 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     }
 
     #[inline]
-    fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, ChunkError> {
-        self.chunks.get(&pos).ok_or(ChunkError::ChunkUnloaded)
+    fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, ChunkAccessError> {
+        self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
     }
 
     #[inline]
-    fn mut_chunk(&mut self, pos: ChunkPosition) -> Result<&mut Chunk<CW, CH, CD, SD>, ChunkError> {
-        self.chunks.get_mut(&pos).ok_or(ChunkError::ChunkUnloaded)
+    fn mut_chunk(
+        &mut self,
+        pos: ChunkPosition
+    ) -> Result<&mut Chunk<CW, CH, CD, SD>, ChunkAccessError> {
+        self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
     }
 }
