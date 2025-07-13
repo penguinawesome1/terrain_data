@@ -6,7 +6,7 @@ macro_rules! impl_getter {
     ($name:ident, bool, $section:ident) => {
         #[inline]
         pub(crate) unsafe fn $name(&self, pos: BlockPosition) -> bool {
-            self.$section.as_ref().map_or(0, |s| unsafe { s.item_unchecked(pos) }) == 0
+            self.$section.as_ref().map_or(0, |s| unsafe { s.item_unchecked(pos) }) != 0
         }
     };
     ($name:ident, $return_type:ty, $section:ident) => {
