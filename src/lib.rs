@@ -96,19 +96,19 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         }
     }
 
-    /// Fill one entire chunk with any local positions block pairs passed in.
+    /// Closure allowing modifications of a chunk using its inward functions.
     #[must_use]
-    pub unsafe fn decorate_chunk<T>(
+    pub fn decorate_chunk<F>(
         &mut self,
-        pos: ChunkPosition,
-        block_set: T
+        chunk_pos: ChunkPosition,
+        mut f: F
     ) -> Result<(), ChunkAccessError>
-        where T: Iterator<Item = (BlockPosition, u8)>
+        where F: FnMut(&mut Chunk<CW, CH, CD, SD>, BlockPosition)
     {
-        let chunk: &mut Chunk<CW, CH, CD, SD> = self.mut_chunk(pos)?;
+        let chunk: &mut Chunk<CW, CH, CD, SD> = self.mut_chunk(chunk_pos)?;
 
-        unsafe {
-            block_set.for_each(|(pos, block)| chunk.set_block(pos, block));
+        for pos in Self::chunk_coords() {
+            f(chunk, pos);
         }
 
         Ok(())
@@ -150,17 +150,22 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     pub fn coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
         where I: Iterator<Item = ChunkPosition>
     {
-        chunk_positions.flat_map(move |chunk_pos| {
-            Self::chunk_coords(chunk_pos).map(move |pos| pos)
-        })
+        chunk_positions.flat_map(move |chunk_pos| Self::global_chunk_coords(chunk_pos))
     }
 
     /// Returns an iter for all global block positions in the chunk.
-    pub fn chunk_coords(pos: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
+    pub fn global_chunk_coords(pos: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
         let chunk_block_pos: BlockPosition = Self::chunk_to_block_pos(pos);
 
         iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(
             move |(x, y, z)| chunk_block_pos + BlockPosition::new(x, y, z)
+        )
+    }
+
+    /// Returns an iter for all local block positions in the chunk.
+    pub fn chunk_coords() -> impl Iterator<Item = BlockPosition> {
+        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(move |(x, y, z)|
+            BlockPosition::new(x, y, z)
         )
     }
 
