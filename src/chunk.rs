@@ -2,32 +2,27 @@ use serde::{ Serialize, Deserialize };
 use crate::subchunk::Subchunk;
 use crate::BlockPosition;
 
-// number of stacked subchunks in one chunk
-const NUM_SUBCHUNKS: usize = 4;
-
 macro_rules! impl_getter {
     ($name:ident, $return_type:ty, $sub_method:ident, $default:expr) => {
         #[inline]
-        pub(crate) unsafe fn $name(&self, pos: BlockPosition) -> $return_type {
+        pub unsafe fn $name(&self, pos: BlockPosition) -> $return_type {
             let index: usize = Self::subchunk_index(pos.z);
 
-            if let Some(subchunk) = self.subchunks[index].as_ref() {
+            self.subchunks[index].as_ref().map_or($default, |s| {
                 let sub_pos: BlockPosition = Self::local_to_sub(pos);
-                unsafe { subchunk.$sub_method(sub_pos) }
-            } else {
-                $default
-            }
+                unsafe { s.$sub_method(sub_pos) }
+            })
         }
     };
 }
 
 macro_rules! impl_setter {
-    ($name:ident, $value_type:ty, $sub_method:ident, $default:expr) => {
-        pub(crate) unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) {
+    ($name:ident, $value_type:ty, $sub_method:ident) => {
+        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) {
             let index: usize = Self::subchunk_index(pos.z);
             let subchunk_opt: &mut Option<Subchunk<W, H, SD>> = &mut self.subchunks[index];
 
-            if value == $default && subchunk_opt.is_none() {
+            if value as u32 == 0 && subchunk_opt.is_none() {
                 return; // return if placement is redundant
             }
 
@@ -44,20 +39,23 @@ macro_rules! impl_setter {
 }
 
 #[derive(Serialize, Deserialize, Default)]
-pub struct Chunk<const W: usize, const H: usize, const D: usize, const SD: usize> {
-    subchunks: [Option<Subchunk<W, H, SD>>; NUM_SUBCHUNKS],
+pub struct Chunk<const W: usize, const H: usize, const SD: usize, const NS: usize>
+    where for<'a> [Option<Subchunk<W, H, SD>>; NS]: Sized + Default + Serialize + Deserialize<'a> {
+    subchunks: [Option<Subchunk<W, H, SD>>; NS],
 }
 
-impl<const W: usize, const H: usize, const D: usize, const SD: usize> Chunk<W, H, D, SD> {
+impl<const W: usize, const H: usize, const SD: usize, const NS: usize> Chunk<W, H, SD, NS>
+    where for<'a> [Option<Subchunk<W, H, SD>>; NS]: Sized + Default + Serialize + Deserialize<'a>
+{
     impl_getter!(block, u8, block, 0);
     impl_getter!(sky_light, u8, sky_light, 0);
     impl_getter!(block_light, u8, block_light, 0);
     impl_getter!(block_exposed, bool, block_exposed, false);
 
-    impl_setter!(set_block, u8, set_block, 0);
-    impl_setter!(set_sky_light, u8, set_sky_light, 0);
-    impl_setter!(set_block_light, u8, set_block_light, 0);
-    impl_setter!(set_block_exposed, bool, set_block_exposed, false);
+    impl_setter!(set_block, u8, set_block);
+    impl_setter!(set_sky_light, u8, set_sky_light);
+    impl_setter!(set_block_light, u8, set_block_light);
+    impl_setter!(set_block_exposed, bool, set_block_exposed);
 
     #[inline]
     const fn subchunk_index(pos_z: i32) -> usize {
@@ -76,7 +74,7 @@ mod tests {
 
     #[test]
     fn test_set_and_get_block() {
-        let mut chunk: Chunk<16, 16, 32, 16> = Chunk::default();
+        let mut chunk: Chunk<16, 16, 16, 4> = Chunk::default();
         let pos_1: BlockPosition = BlockPosition::new(15, 1, 21);
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
 

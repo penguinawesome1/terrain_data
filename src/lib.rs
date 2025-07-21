@@ -1,13 +1,23 @@
 mod chunk;
 mod subchunk;
 
-use std::collections::HashMap;
-use std::hash::BuildHasherDefault;
+use std::{
+    hash::BuildHasherDefault,
+    collections::{ HashMap, hash_map::Entry },
+    io::{ Write, self },
+    fs,
+};
+use bincode::{
+    serde as bincode_serde,
+    config,
+    error::{ EncodeError, DecodeError },
+    serde::encode_to_vec,
+};
+use serde::{ Serialize, Deserialize };
 use ahash::AHasher;
-use std::collections::hash_map::Entry;
 use itertools::iproduct;
 use thiserror::Error;
-use crate::chunk::Chunk;
+use crate::{ subchunk::Subchunk, chunk::Chunk };
 
 const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
     ChunkPosition::new(-1, 0),
@@ -24,6 +34,8 @@ const BLOCK_OFFSETS: [BlockPosition; 6] = [
     BlockPosition::new(0, -1, 0),
     BlockPosition::new(0, 0, -1),
 ];
+
+const CHUNKS_DIR: &str = "chunks";
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
@@ -64,14 +76,29 @@ pub enum ChunkOverwriteError {
     ChunkAlreadyLoaded,
 }
 
+#[derive(Debug, Error)]
+pub enum ChunkStoreError {
+    #[error("I/O error: {0}")] IoError(#[from] io::Error),
+    #[error("Chunk access error: {0}")] ChunkAccess(#[from] ChunkAccessError),
+    #[error("Chunk overwrite error: {0}")] ChunkOverwrite(#[from] ChunkOverwriteError),
+    #[error("Encoding error: {0}")] Encode(#[from] EncodeError),
+    #[error("Decoding error: {0}")] Decode(#[from] DecodeError),
+}
+
 /// Stores all chunks and marks dirty chunks.
 /// Allows access and modification to them.
 #[derive(Default)]
-pub struct World<const CW: usize, const CH: usize, const CD: usize, const SD: usize> {
-    chunks: HashMap<ChunkPosition, Chunk<CW, CH, CD, SD>, BuildHasherDefault<AHasher>>,
+pub struct World<const CW: usize, const CH: usize, const SD: usize, const NS: usize>
+    where
+        for<'a> [Option<Subchunk<CW, CH, SD>>; NS]: Sized + Default + Serialize + Deserialize<'a> {
+    chunks: HashMap<ChunkPosition, Chunk<CW, CH, SD, NS>, BuildHasherDefault<AHasher>>,
 }
 
-impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<CW, CH, CD, SD> {
+impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<CW, CH, SD, NS>
+    where for<'a> [Option<Subchunk<CW, CH, SD>>; NS]: Sized + Default + Serialize + Deserialize<'a>
+{
+    const CD: usize = SD * NS;
+
     impl_getter!(block, block, u8);
     impl_getter!(sky_light, sky_light, u8);
     impl_getter!(block_light, block_light, u8);
@@ -89,7 +116,7 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         match self.chunks.entry(pos) {
             Entry::Occupied(_) => { Err(ChunkOverwriteError::ChunkAlreadyLoaded) }
             Entry::Vacant(entry) => {
-                let chunk: Chunk<CW, CH, CD, SD> = Chunk::default();
+                let chunk: Chunk<CW, CH, SD, NS> = Chunk::default();
                 entry.insert(chunk);
                 Ok(())
             }
@@ -103,11 +130,11 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         chunk_pos: ChunkPosition,
         mut f: F
     ) -> Result<(), ChunkAccessError>
-        where F: FnMut(&mut Chunk<CW, CH, CD, SD>, BlockPosition)
+        where F: FnMut(&mut Chunk<CW, CH, SD, NS>, BlockPosition)
     {
-        let chunk: &mut Chunk<CW, CH, CD, SD> = self.mut_chunk(chunk_pos)?;
+        let chunk: &mut Chunk<CW, CH, SD, NS> = self.mut_chunk(chunk_pos)?;
 
-        for pos in Self::chunk_coords() {
+        for pos in Self::chunk_coords(ChunkPosition::ZERO) {
             f(chunk, pos);
         }
 
@@ -143,29 +170,23 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
         BLOCK_OFFSETS.iter()
             .map(move |offset| { pos + offset })
-            .filter(|adj_pos| { adj_pos.z >= 0 && adj_pos.z < (CD as i32) })
+            .filter(|adj_pos| { adj_pos.z >= 0 && adj_pos.z < (Self::CD as i32) })
     }
 
     /// Returns an iter for every global position found in the passed chunk positions.
     pub fn coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
         where I: Iterator<Item = ChunkPosition>
     {
-        chunk_positions.flat_map(move |chunk_pos| Self::global_chunk_coords(chunk_pos))
+        chunk_positions.flat_map(move |chunk_pos| Self::chunk_coords(chunk_pos))
     }
 
-    /// Returns an iter for all global block positions in the chunk.
-    pub fn global_chunk_coords(pos: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
-        let chunk_block_pos: BlockPosition = Self::chunk_to_block_pos(pos);
+    /// Returns an iter for all block positions in the chunk offset by the chunk position.
+    /// Passing in zero offset returns local positions.
+    pub fn chunk_coords(offset: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
+        let base_block_pos: BlockPosition = Self::chunk_to_block_pos(offset);
 
-        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(
-            move |(x, y, z)| chunk_block_pos + BlockPosition::new(x, y, z)
-        )
-    }
-
-    /// Returns an iter for all local block positions in the chunk.
-    pub fn chunk_coords() -> impl Iterator<Item = BlockPosition> {
-        iproduct!(0..CW as i32, 0..CH as i32, 0..CD as i32).map(move |(x, y, z)|
-            BlockPosition::new(x, y, z)
+        iproduct!(0..CW as i32, 0..CH as i32, 0..Self::CD as i32).map(
+            move |(x, y, z)| base_block_pos + BlockPosition::new(x, y, z)
         )
     }
 
@@ -186,8 +207,42 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
         BlockPosition::new(pos.x.rem_euclid(CW as i32), pos.y.rem_euclid(CH as i32), pos.z)
     }
 
+    pub fn unload_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+        let chunk: Chunk<CW, CH, SD, NS> = self.chunks
+            .remove(&pos)
+            .ok_or(ChunkAccessError::ChunkUnloaded)?;
+
+        fs::create_dir_all(CHUNKS_DIR)?;
+        let path: String = format!("{}/{}_{}.bin", CHUNKS_DIR, pos.x, pos.y);
+        let mut file: fs::File = fs::File::create(&path)?;
+
+        let encoded_data = encode_to_vec(&chunk, config::standard())?;
+
+        file.write_all(&encoded_data)?;
+
+        Ok(())
+    }
+
+    pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+        if self.is_chunk_at_pos(pos) {
+            return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded));
+        }
+
+        let path: String = format!("{}/{}_{}.bin", CHUNKS_DIR, pos.x, pos.y);
+        let encoded_data: Vec<u8> = fs::read(&path)?;
+
+        let (chunk, _): (Chunk<CW, CH, SD, NS>, usize) = bincode_serde::decode_from_slice(
+            &encoded_data,
+            config::standard()
+        )?;
+
+        self.chunks.insert(pos, chunk);
+
+        Ok(())
+    }
+
     #[inline]
-    fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, CD, SD>, ChunkAccessError> {
+    fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, SD, NS>, ChunkAccessError> {
         self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
     }
 
@@ -195,7 +250,39 @@ impl<const CW: usize, const CH: usize, const CD: usize, const SD: usize> World<C
     fn mut_chunk(
         &mut self,
         pos: ChunkPosition
-    ) -> Result<&mut Chunk<CW, CH, CD, SD>, ChunkAccessError> {
+    ) -> Result<&mut Chunk<CW, CH, SD, NS>, ChunkAccessError> {
         self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_save_load_chunk() -> Result<(), ChunkStoreError> {
+        let mut world: World<16, 16, 16, 4> = World::default();
+        let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
+        let pos: BlockPosition = BlockPosition::new(1, 2, 3);
+
+        world.add_default_chunk(chunk_pos)?;
+        unsafe {
+            world.set_block(pos, 3)?;
+        }
+
+        world.unload_chunk(chunk_pos)?;
+
+        unsafe {
+            assert!(world.block(pos).is_err());
+        }
+
+        world.load_chunk(chunk_pos)?;
+
+        unsafe {
+            let block: u8 = world.block(pos)?;
+            assert!(block == 3);
+        }
+
+        Ok(())
     }
 }
