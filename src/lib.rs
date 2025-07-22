@@ -52,7 +52,7 @@ macro_rules! impl_setter {
         pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkAccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            unsafe { self.mut_chunk(chunk_pos)?.$sub_method(local_pos, value); }
+            unsafe { self.chunk_mut(chunk_pos)?.$sub_method(local_pos, value); }
             Ok(())
         }
     };
@@ -132,7 +132,21 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     ) -> Result<(), ChunkAccessError>
         where F: FnMut(&mut Chunk<CW, CH, SD, NS>, BlockPosition)
     {
-        let chunk: &mut Chunk<CW, CH, SD, NS> = self.mut_chunk(chunk_pos)?;
+        let chunk: &mut Chunk<CW, CH, SD, NS> = self.chunk_mut(chunk_pos)?;
+
+        for pos in Self::chunk_coords(ChunkPosition::ZERO) {
+            f(chunk, pos);
+        }
+
+        Ok(())
+    }
+
+    /// Closure allowing viewing of a chunk using its inward functions.
+    #[must_use]
+    pub fn inspect_chunk<F>(&self, chunk_pos: ChunkPosition, f: F) -> Result<(), ChunkAccessError>
+        where F: Fn(&Chunk<CW, CH, SD, NS>, BlockPosition)
+    {
+        let chunk: &Chunk<CW, CH, SD, NS> = self.chunk(chunk_pos)?;
 
         for pos in Self::chunk_coords(ChunkPosition::ZERO) {
             f(chunk, pos);
@@ -247,7 +261,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     }
 
     #[inline]
-    fn mut_chunk(
+    fn chunk_mut(
         &mut self,
         pos: ChunkPosition
     ) -> Result<&mut Chunk<CW, CH, SD, NS>, ChunkAccessError> {
