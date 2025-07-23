@@ -124,6 +124,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     }
 
     /// Closure allowing modifications of a chunk using its inward functions.
+    /// Iterates through its global positions.
     #[must_use]
     pub fn decorate_chunk<F>(
         &mut self,
@@ -134,7 +135,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     {
         let chunk: &mut Chunk<CW, CH, SD, NS> = self.chunk_mut(chunk_pos)?;
 
-        for pos in Self::chunk_coords(ChunkPosition::ZERO) {
+        for pos in Self::chunk_coords(chunk_pos) {
             f(chunk, pos);
         }
 
