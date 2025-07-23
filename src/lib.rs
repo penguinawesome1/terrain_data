@@ -141,20 +141,6 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
         Ok(())
     }
 
-    /// Closure allowing viewing of a chunk using its inward functions.
-    #[must_use]
-    pub fn inspect_chunk<F>(&self, chunk_pos: ChunkPosition, f: F) -> Result<(), ChunkAccessError>
-        where F: Fn(&Chunk<CW, CH, SD, NS>, BlockPosition)
-    {
-        let chunk: &Chunk<CW, CH, SD, NS> = self.chunk(chunk_pos)?;
-
-        for pos in Self::chunk_coords(ChunkPosition::ZERO) {
-            f(chunk, pos);
-        }
-
-        Ok(())
-    }
-
     /// Returns bool for if a chunk is found at the passed position.
     pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
         self.chunks.contains_key(&pos)
