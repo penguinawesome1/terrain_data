@@ -197,6 +197,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     }
 
     /// Gets the chunk position a block position falls into.
+    #[inline]
     pub const fn block_to_chunk_pos(pos: BlockPosition) -> ChunkPosition {
         ChunkPosition::new(pos.x.div_euclid(CW as i32), pos.y.div_euclid(CH as i32))
     }
@@ -223,6 +224,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
         Ok(())
     }
 
+    #[must_use]
     pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
         if self.is_chunk_at_pos(pos) {
             return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded));
