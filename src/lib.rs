@@ -135,7 +135,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     {
         let chunk: &mut Chunk<CW, CH, SD, NS> = self.chunk_mut(chunk_pos)?;
 
-        for pos in Self::chunk_coords(chunk_pos) {
+        for pos in Self::chunk_coords(ChunkPosition::ZERO) {
             f(chunk, pos);
         }
 
