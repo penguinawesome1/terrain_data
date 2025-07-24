@@ -142,6 +142,20 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
         Ok(())
     }
 
+    /// Returns an iter for every block type and global position pair found in the chunk.
+    /// Filters out blocks that are not exposed.
+    pub fn chunk_render_data(
+        &self,
+        chunk_pos: ChunkPosition,
+    ) -> Result<impl Iterator<Item = (u8, BlockPosition)>, ChunkAccessError> {
+        let chunk: &Chunk<CW, CH, SD, NS> = self.chunk(chunk_pos)?;
+        let origin_block_pos: BlockPosition = Self::chunk_to_block_pos(chunk_pos);
+
+        Ok(Self::chunk_coords(ChunkPosition::ZERO)
+            .filter(|&pos| unsafe { chunk.block_exposed(pos) })
+            .map(move |pos| unsafe { (chunk.block(pos), origin_block_pos + pos) }))
+    }
+
     /// Returns bool for if a chunk is found at the passed position.
     pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
         self.chunks.contains_key(&pos)
