@@ -114,7 +114,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     #[must_use]
     pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
         match self.chunks.entry(pos) {
-            Entry::Occupied(_) => { Err(ChunkOverwriteError::ChunkAlreadyLoaded) }
+            Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded),
             Entry::Vacant(entry) => {
                 let chunk: Chunk<CW, CH, SD, NS> = Chunk::default();
                 entry.insert(chunk);
