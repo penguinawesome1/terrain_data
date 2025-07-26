@@ -18,7 +18,8 @@ use ahash::AHasher;
 use itertools::iproduct;
 use thiserror::Error;
 use std::path::PathBuf;
-use crate::{ subchunk::Subchunk, chunk::{ Chunk, ZBoundsError } };
+use crate::{ subchunk::Subchunk, chunk::Chunk };
+use chroma::BoundsError;
 
 const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
     ChunkPosition::new(-1, 0),
@@ -43,7 +44,7 @@ macro_rules! impl_getter {
         pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, AccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            Ok(unsafe { self.chunk(chunk_pos)?.$sub_method(local_pos)? })
+            Ok(self.chunk(chunk_pos)?.$sub_method(local_pos)?)
         }
     };
 }
@@ -53,7 +54,7 @@ macro_rules! impl_setter {
         pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), AccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            unsafe { self.chunk_mut(chunk_pos)?.$sub_method(local_pos, value)?; }
+            self.chunk_mut(chunk_pos)?.$sub_method(local_pos, value)?;
             Ok(())
         }
     };
@@ -68,7 +69,7 @@ pub type BlockPosition = glam::IVec3;
 #[derive(Debug, Error)]
 pub enum AccessError {
     #[error(transparent)] ChunkAccess(#[from] ChunkAccessError),
-    #[error(transparent)] ZBounds(#[from] ZBoundsError),
+    #[error(transparent)] Bounds(#[from] BoundsError),
 }
 
 #[derive(Debug, Error)]
@@ -158,8 +159,8 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
 
         Ok(
             Self::chunk_coords(ChunkPosition::ZERO)
-                .filter(|&pos| unsafe { chunk.block_exposed(pos).unwrap() })
-                .map(move |pos| unsafe { (chunk.block(pos).unwrap(), origin_block_pos + pos) })
+                .filter(|&pos| chunk.block_exposed(pos).unwrap())
+                .map(move |pos| (chunk.block(pos).unwrap(), origin_block_pos + pos))
         )
     }
 
