@@ -11,3 +11,4 @@ thiserror = "2.0.12"
 ahash = "0.8.12"
 bincode = { version = "2.0.1", features = ["derive", "serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
+paste = "1.0.15"

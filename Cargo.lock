@@ -50,7 +50,7 @@ checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 [[package]]
 name = "chroma"
 version = "0.1.0"
-source = "git+https://github.com/penguinawesome1/chroma.git?tag=v0.1.0#b5342227fbeb6b0c7c0785b425cab77e94881fc8"
+source = "git+https://github.com/penguinawesome1/chroma.git?tag=v0.1.0#2bbf1edc10c9e11cdb79c6a6f0a0867a74416ec6"
 dependencies = [
  "glam",
  "serde",
@@ -72,6 +72,7 @@ dependencies = [
  "chroma",
  "glam",
  "itertools",
+ "paste",
  "serde",
  "thiserror",
 ]
@@ -90,9 +91,9 @@ dependencies = [
 
 [[package]]
 name = "glam"
-version = "0.30.4"
+version = "0.30.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "50a99dbe56b72736564cfa4b85bf9a33079f16ae8b74983ab06af3b1a3696b11"
+checksum = "f2d1aab06663bdce00d6ca5e5ed586ec8d18033a771906c993a1e3755b368d85"
 dependencies = [
  "serde",
 ]
@@ -117,6 +118,12 @@ name = "once_cell"
 version = "1.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42f5e15c9953c5e4ccceeb2e7382a716482c34515315f7b03532b8b4e8393d2d"
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "proc-macro2"
