@@ -14,6 +14,7 @@
 ///     num_subchunks: 16,
 ///     Block r#as block: u8 = 1,
 ///     SkyLight r#as sky_light: u8 = 1,
+///     Exposed r#as is_exposed: bool = 1,
 /// }
 /// ```
 #[macro_export]
@@ -81,6 +82,25 @@ macro_rules! make_world {
 
         const CHUNKS_DIR: &str = "chunks";
 
+        pub trait FieldType: Sized {
+            fn from_u64(v: u64) -> Self;
+            fn to_u64(self) -> u64;
+        }
+
+        impl FieldType for u8 {
+            #[inline(always)]
+            fn from_u64(v: u64) -> Self { v as Self }
+            #[inline(always)]
+            fn to_u64(self) -> u64 { self as u64 }
+        }
+
+        impl FieldType for bool {
+            #[inline(always)]
+            fn from_u64(v: u64) -> Self { v != 0 }
+            #[inline(always)]
+            fn to_u64(self) -> u64 { self as u64 }
+        }
+
         #[derive(Debug, Error)]
         pub enum AccessError {
             #[error(transparent)] ChunkAccess(#[from] ChunkAccessError),
@@ -142,7 +162,13 @@ macro_rules! make_world {
             $(
                 #[inline]
                 pub fn $field_name_method(&self, pos: BlockPosition) -> Result<$field_type, BoundsError> {
-                    Ok(self.item(SectionField::$field_name_enum, pos)? as $field_type)
+                    // Ok(self.item(SectionField::$field_name_enum, pos)? as $field_type)
+
+                    Ok(
+                        <$field_type as FieldType>::from_u64(
+                            self.item(SectionField::$field_name_enum, pos)?
+                        )
+                    )
                 }
             )*
 
@@ -157,7 +183,9 @@ macro_rules! make_world {
                         pos: BlockPosition,
                         value: $field_type
                     ) -> Result<(), BoundsError> {
-                        self.set_item(SectionField::$field_name_enum, pos, value as u64)?;
+                        self.set_item(
+                            SectionField::$field_name_enum, pos, <$field_type as FieldType>::to_u64(value)
+                        )?;
                         Ok(())
                     }
                 )*
@@ -215,7 +243,7 @@ macro_rules! make_world {
                         return Err(BoundsError::OutOfBounds(pos));
                     };
 
-                    subchunk_opt.as_ref().map_or(Ok(0 as $field_type), |s| {
+                    subchunk_opt.as_ref().map_or(Ok(<$field_type as FieldType>::from_u64(0)), |s| {
                         let sub_pos: BlockPosition = Self::local_to_sub(pos);
                         Ok(s.$field_name_method(sub_pos)?)
                     })
@@ -239,7 +267,7 @@ macro_rules! make_world {
                             return Err(BoundsError::OutOfBounds(pos));
                         };
 
-                        if value as u32 == 0 && subchunk_opt.is_none() {
+                        if <$field_type as FieldType>::to_u64(value) == 0 && subchunk_opt.is_none() {
                             return Ok(()); // return if placement is redundant
                         }
 
@@ -452,6 +480,7 @@ mod tests {
         num_subchunks: 16,
         Block r#as block: u8 = 1,
         SkyLight r#as sky_light: u8 = 1,
+        Exposed r#as is_exposed: bool = 1,
     }
 
     #[test]
@@ -495,12 +524,12 @@ mod tests {
         let pos_1: BlockPosition = BlockPosition::new(15, 1, 200);
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
 
-        world.set_block(pos_1, 0)?;
-        world.set_block(pos_1, 4)?;
-        world.set_block(pos_2, 5)?;
+        world.set_is_exposed(pos_1, true)?;
+        world.set_is_exposed(pos_1, false)?;
+        world.set_is_exposed(pos_2, true)?;
 
-        assert_eq!(world.block(pos_1)?, 4);
-        assert_eq!(world.block(pos_2)?, 5);
+        assert_eq!(world.is_exposed(pos_1)?, false);
+        assert_eq!(world.is_exposed(pos_2)?, true);
 
         Ok(())
     }
