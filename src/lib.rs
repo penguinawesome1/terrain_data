@@ -187,12 +187,9 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     }
 
     /// Returns all adjacent block offsets.
-    /// Filters out illegal vertical offsets.
     #[inline]
     pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
-        BLOCK_OFFSETS.iter()
-            .map(move |offset| { pos + offset })
-            .filter(|adj_pos| { adj_pos.z >= 0 && adj_pos.z < (Self::CD as i32) })
+        BLOCK_OFFSETS.iter().map(move |offset| { pos + offset })
     }
 
     /// Returns an iter for every global position found in the passed chunk positions.
