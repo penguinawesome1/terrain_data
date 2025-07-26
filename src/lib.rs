@@ -17,7 +17,8 @@ use serde::{ Serialize, Deserialize };
 use ahash::AHasher;
 use itertools::iproduct;
 use thiserror::Error;
-use crate::{ subchunk::Subchunk, chunk::Chunk };
+use std::path::PathBuf;
+use crate::{ subchunk::Subchunk, chunk::{ Chunk, ZBoundsError } };
 
 const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
     ChunkPosition::new(-1, 0),
@@ -39,20 +40,20 @@ const CHUNKS_DIR: &str = "chunks";
 
 macro_rules! impl_getter {
     ($name:ident, $sub_method:ident, $return_type:ty) => {
-        pub unsafe fn $name(&self, pos: BlockPosition) -> Result<$return_type, ChunkAccessError> {
+        pub fn $name(&self, pos: BlockPosition) -> Result<$return_type, AccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            Ok(unsafe { self.chunk(chunk_pos)?.$sub_method(local_pos) })
+            Ok(unsafe { self.chunk(chunk_pos)?.$sub_method(local_pos)? })
         }
     };
 }
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
-        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ChunkAccessError> {
+        pub fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), AccessError> {
             let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
             let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-            unsafe { self.chunk_mut(chunk_pos)?.$sub_method(local_pos, value); }
+            unsafe { self.chunk_mut(chunk_pos)?.$sub_method(local_pos, value)?; }
             Ok(())
         }
     };
@@ -65,24 +66,28 @@ pub type ChunkPosition = glam::IVec2;
 pub type BlockPosition = glam::IVec3;
 
 #[derive(Debug, Error)]
+pub enum AccessError {
+    #[error(transparent)] ChunkAccess(#[from] ChunkAccessError),
+    #[error(transparent)] ZBounds(#[from] ZBoundsError),
+}
+
+#[derive(Debug, Error)]
 pub enum ChunkAccessError {
-    #[error("Chunk at position is currently unloaded")]
-    ChunkUnloaded,
+    #[error("Chunk {0:?} is currently unloaded.")] ChunkUnloaded(ChunkPosition),
 }
 
 #[derive(Debug, Error)]
 pub enum ChunkOverwriteError {
-    #[error("A chunk already exists at the specified position")]
-    ChunkAlreadyLoaded,
+    #[error("Chunk {0:?} already exists.")] ChunkAlreadyLoaded(ChunkPosition),
 }
 
 #[derive(Debug, Error)]
 pub enum ChunkStoreError {
-    #[error("I/O error: {0}")] IoError(#[from] io::Error),
-    #[error("Chunk access error: {0}")] ChunkAccess(#[from] ChunkAccessError),
-    #[error("Chunk overwrite error: {0}")] ChunkOverwrite(#[from] ChunkOverwriteError),
-    #[error("Encoding error: {0}")] Encode(#[from] EncodeError),
-    #[error("Decoding error: {0}")] Decode(#[from] DecodeError),
+    #[error(transparent)] Io(#[from] io::Error),
+    #[error(transparent)] Access(#[from] AccessError),
+    #[error(transparent)] ChunkOverwrite(#[from] ChunkOverwriteError),
+    #[error(transparent)] Encode(#[from] EncodeError),
+    #[error(transparent)] Decode(#[from] DecodeError),
 }
 
 /// Stores all chunks and marks dirty chunks.
@@ -114,7 +119,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     #[must_use]
     pub fn add_default_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
         match self.chunks.entry(pos) {
-            Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded),
+            Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
             Entry::Vacant(entry) => {
                 let chunk: Chunk<CW, CH, SD, NS> = Chunk::default();
                 entry.insert(chunk);
@@ -146,14 +151,16 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     /// Filters out blocks that are not exposed.
     pub fn chunk_render_data(
         &self,
-        chunk_pos: ChunkPosition,
+        chunk_pos: ChunkPosition
     ) -> Result<impl Iterator<Item = (u8, BlockPosition)>, ChunkAccessError> {
         let chunk: &Chunk<CW, CH, SD, NS> = self.chunk(chunk_pos)?;
         let origin_block_pos: BlockPosition = Self::chunk_to_block_pos(chunk_pos);
 
-        Ok(Self::chunk_coords(ChunkPosition::ZERO)
-            .filter(|&pos| unsafe { chunk.block_exposed(pos) })
-            .map(move |pos| unsafe { (chunk.block(pos), origin_block_pos + pos) }))
+        Ok(
+            Self::chunk_coords(ChunkPosition::ZERO)
+                .filter(|&pos| unsafe { chunk.block_exposed(pos).unwrap() })
+                .map(move |pos| unsafe { (chunk.block(pos).unwrap(), origin_block_pos + pos) })
+        )
     }
 
     /// Returns bool for if a chunk is found at the passed position.
@@ -226,10 +233,10 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     pub fn unload_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
         let chunk: Chunk<CW, CH, SD, NS> = self.chunks
             .remove(&pos)
-            .ok_or(ChunkAccessError::ChunkUnloaded)?;
+            .ok_or(AccessError::ChunkAccess(ChunkAccessError::ChunkUnloaded(pos)))?;
 
         fs::create_dir_all(CHUNKS_DIR)?;
-        let path: String = format!("{}/{}_{}.bin", CHUNKS_DIR, pos.x, pos.y);
+        let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
         let mut file: fs::File = fs::File::create(&path)?;
 
         let encoded_data = encode_to_vec(&chunk, config::standard())?;
@@ -242,10 +249,12 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
     #[must_use]
     pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
         if self.is_chunk_at_pos(pos) {
-            return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded));
+            return Err(
+                ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded(pos))
+            );
         }
 
-        let path: String = format!("{}/{}_{}.bin", CHUNKS_DIR, pos.x, pos.y);
+        let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
         let encoded_data: Vec<u8> = fs::read(&path)?;
 
         let (chunk, _): (Chunk<CW, CH, SD, NS>, usize) = bincode_serde::decode_from_slice(
@@ -260,7 +269,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
 
     #[inline]
     fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk<CW, CH, SD, NS>, ChunkAccessError> {
-        self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
+        self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
     }
 
     #[inline]
@@ -268,7 +277,7 @@ impl<const CW: usize, const CH: usize, const SD: usize, const NS: usize> World<C
         &mut self,
         pos: ChunkPosition
     ) -> Result<&mut Chunk<CW, CH, SD, NS>, ChunkAccessError> {
-        self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded)
+        self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
     }
 }
 
@@ -289,16 +298,12 @@ mod tests {
 
         world.unload_chunk(chunk_pos)?;
 
-        unsafe {
-            assert!(world.block(pos).is_err());
-        }
+        assert!(world.block(pos).is_err());
 
         world.load_chunk(chunk_pos)?;
 
-        unsafe {
-            let block: u8 = world.block(pos)?;
-            assert!(block == 3);
-        }
+        let block: u8 = world.block(pos)?;
+        assert!(block == 3);
 
         Ok(())
     }

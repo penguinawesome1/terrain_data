@@ -1,16 +1,21 @@
 use serde::{ Serialize, Deserialize };
 use crate::subchunk::Subchunk;
 use crate::BlockPosition;
+use thiserror::Error;
 
 macro_rules! impl_getter {
     ($name:ident, $return_type:ty, $sub_method:ident, $default:expr) => {
         #[inline]
-        pub unsafe fn $name(&self, pos: BlockPosition) -> $return_type {
+        pub unsafe fn $name(&self, pos: BlockPosition) -> Result<$return_type, ZBoundsError> {
             let index: usize = Self::subchunk_index(pos.z);
 
-            self.subchunks[index].as_ref().map_or($default, |s| {
+            let Some(subchunk_opt) = self.subchunks.get(index) else {
+                return Err(ZBoundsError::ZOutOfBounds(pos));
+            };
+
+            subchunk_opt.as_ref().map_or(Ok($default), |s| {
                 let sub_pos: BlockPosition = Self::local_to_sub(pos);
-                unsafe { s.$sub_method(sub_pos) }
+                Ok(unsafe { s.$sub_method(sub_pos) })
             })
         }
     };
@@ -18,12 +23,16 @@ macro_rules! impl_getter {
 
 macro_rules! impl_setter {
     ($name:ident, $value_type:ty, $sub_method:ident) => {
-        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) {
+        #[must_use]
+        pub unsafe fn $name(&mut self, pos: BlockPosition, value: $value_type) -> Result<(), ZBoundsError> {
             let index: usize = Self::subchunk_index(pos.z);
-            let subchunk_opt: &mut Option<Subchunk<W, H, SD>> = &mut self.subchunks[index];
+
+            let Some(subchunk_opt) = self.subchunks.get_mut(index) else {
+                return Err(ZBoundsError::ZOutOfBounds(pos));
+            };
 
             if value as u32 == 0 && subchunk_opt.is_none() {
-                return; // return if placement is redundant
+                return Ok(()); // return if placement is redundant
             }
 
             let subchunk: &mut Subchunk<W, H, SD> = subchunk_opt.get_or_insert_with(|| Subchunk::default());
@@ -34,8 +43,15 @@ macro_rules! impl_setter {
             if subchunk.is_empty() {
                 *subchunk_opt = None; // set empty subchunks to none
             }
+
+            Ok(())
         }
     };
+}
+
+#[derive(Debug, Error)]
+pub enum ZBoundsError {
+    #[error("Block {0:?} is vertically outside of chunk.")] ZOutOfBounds(BlockPosition),
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -83,8 +99,8 @@ mod tests {
             chunk.set_block(pos_1, 1);
             chunk.set_block(pos_2, 3);
 
-            assert_eq!(chunk.block(pos_1), 1);
-            assert_eq!(chunk.block(pos_2), 3);
+            assert_eq!(chunk.block(pos_1).unwrap(), 1);
+            assert_eq!(chunk.block(pos_2).unwrap(), 3);
         }
     }
 }
