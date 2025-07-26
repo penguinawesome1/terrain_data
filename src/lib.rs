@@ -292,9 +292,7 @@ mod tests {
         let pos: BlockPosition = BlockPosition::new(1, 2, 3);
 
         world.add_default_chunk(chunk_pos)?;
-        unsafe {
-            world.set_block(pos, 3)?;
-        }
+        world.set_block(pos, 3)?;
 
         world.unload_chunk(chunk_pos)?;
 

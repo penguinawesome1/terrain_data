@@ -95,9 +95,9 @@ mod tests {
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
 
         unsafe {
-            chunk.set_block(pos_1, 2);
-            chunk.set_block(pos_1, 1);
-            chunk.set_block(pos_2, 3);
+            chunk.set_block(pos_1, 2).unwrap();
+            chunk.set_block(pos_1, 1).unwrap();
+            chunk.set_block(pos_2, 3).unwrap();
 
             assert_eq!(chunk.block(pos_1).unwrap(), 1);
             assert_eq!(chunk.block(pos_2).unwrap(), 3);
