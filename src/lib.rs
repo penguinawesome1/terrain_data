@@ -28,7 +28,7 @@ pub mod __internal_prelude {
 /// use std::sync::Arc;
 /// use terrain_data::prelude::*;
 ///
-/// make_world! {
+/// world! {
 ///     chunk_width: 16,
 ///     chunk_height: 16,
 ///     subchunk_depth: 16,
@@ -57,7 +57,7 @@ pub mod __internal_prelude {
 /// }
 /// ```
 #[macro_export]
-macro_rules! make_world {
+macro_rules! world {
     (
         chunk_width: $chunk_width:expr,
         chunk_height: $chunk_height:expr,
@@ -469,7 +469,7 @@ mod tests {
     use std::sync::Arc;
     use tokio::fs;
 
-    make_world! {
+    world! {
         chunk_width: 16,
         chunk_height: 16,
         subchunk_depth: 16,

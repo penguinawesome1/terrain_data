@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use terrain_data::prelude::*;
 
-make_world! {
+world! {
     chunk_width: 16,
     chunk_height: 16,
     subchunk_depth: 16,
