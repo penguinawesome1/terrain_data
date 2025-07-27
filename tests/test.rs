@@ -12,7 +12,7 @@ make_world! {
 }
 
 fn main() -> Result<(), AccessError> {
-    let world: Arc<world::World> = Arc::new(world::World::default());
+    let world: Arc<World> = Arc::new(World::default());
     let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
     world.add_empty_chunk(chunk_pos).unwrap();
 

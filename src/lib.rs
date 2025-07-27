@@ -39,7 +39,7 @@ pub mod __internal_prelude {
 /// }
 ///
 /// fn main() -> Result<(), AccessError> {
-///     let world: Arc<world::World> = Arc::new(world::World::default());
+///     let world: Arc<World> = Arc::new(World::default());
 ///     let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
 ///     world.add_empty_chunk(chunk_pos).unwrap();
 ///
@@ -68,7 +68,9 @@ macro_rules! make_world {
         ),*
         $(,)?
     ) => {
-        pub mod world {
+        pub use __internal_world::*;
+
+        mod __internal_world {
             use $crate::__internal_prelude::{
                 ahash::AHasher,
                 bincode::{
@@ -479,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_get_and_set_chunk() -> Result<(), BoundsError> {
-        let mut chunk: world::Chunk = world::Chunk::default();
+        let mut chunk: Chunk = Chunk::default();
         let pos_1: BlockPosition = BlockPosition::new(15, 1, 200);
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
 
@@ -495,7 +497,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_and_set_world() -> Result<(), AccessError> {
-        let world: Arc<world::World> = Arc::new(world::World::default());
+        let world: Arc<World> = Arc::new(World::default());
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
         world.add_empty_chunk(chunk_pos).unwrap();
 
@@ -514,7 +516,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_load_chunk() -> Result<(), ChunkStoreError> {
-        let world: Arc<world::World> = Arc::new(world::World::default());
+        let world: Arc<World> = Arc::new(World::default());
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
         let pos: BlockPosition = BlockPosition::new(1, 2, 3);
 
@@ -540,7 +542,7 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_set_block_and_add_chunk()
     -> Result<(), Box<dyn std::error::Error + Send>> {
-        use world::World;
+        use World;
 
         tokio::fs::create_dir_all(CHUNKS_DIR).await.unwrap();
 
