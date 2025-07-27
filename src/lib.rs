@@ -5,7 +5,7 @@
 /// # Examples
 ///
 /// ```
-/// use floralcraft_terrain::make_world;
+/// use terrain_data::make_world;
 ///
 /// make_world! {
 ///     chunk_width: 16,
@@ -36,9 +36,9 @@ macro_rules! make_world {
         use ahash::AHasher;
         use itertools::iproduct;
         use thiserror::Error;
+        use dashmap::{ DashMap, mapref::one::{ Ref, RefMut } };
         use std::{
             hash::BuildHasherDefault,
-            collections::{ HashMap, hash_map::Entry },
             path::PathBuf,
         };
         use std::{
@@ -64,6 +64,8 @@ macro_rules! make_world {
         const CHUNK_HEIGHT: usize = $chunk_height as usize;
         const CHUNK_DEPTH: usize = SUBCHUNK_DEPTH * NUM_SUBCHUNKS;
 
+        const CHUNKS_DIR: &str = "chunks";
+
         const CHUNK_ADJ_OFFSETS: [ChunkPosition; 4] = [
             ChunkPosition::new(-1, 0),
             ChunkPosition::new(1, 0),
@@ -80,9 +82,7 @@ macro_rules! make_world {
             BlockPosition::new(0, 0, -1),
         ];
 
-        const CHUNKS_DIR: &str = "chunks";
-
-        pub trait FieldType: Sized {
+        trait FieldType: Sized {
             fn from_u64(v: u64) -> Self;
             fn to_u64(self) -> u64;
         }
@@ -126,21 +126,249 @@ macro_rules! make_world {
             #[error(transparent)] Decode(#[from] DecodeError),
         }
 
-        // -- SectionField --
+        // -- World --
 
-        #[derive(Clone, Copy, Serialize, Deserialize)]
-        pub enum SectionField {
-            $($field_name_enum),*,
-            #[doc(hidden)]
-            __COUNT
+        /// Stores all chunks and marks dirty chunks.
+        /// Allows access and modification to them.
+        #[derive(Default)]
+        pub struct World {
+            chunks: DashMap<ChunkPosition, Chunk, BuildHasherDefault<AHasher>>,
         }
 
-        impl SectionField {
-            pub const COUNT: usize = Self::__COUNT as usize;
-            const BITS_PER_ITEM_TABLE: &'static [u8] = &[$($bits_per_item),*];
+        impl World {
+            // getters
 
-            pub const fn bits(&self) -> u8 {
-                Self::BITS_PER_ITEM_TABLE[*self as usize]
+            $(
+                #[inline]
+                pub fn $field_name_method(&self, pos: BlockPosition) -> Result<$field_type, AccessError> {
+                    let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
+                    let local_pos: BlockPosition = Self::global_to_local_pos(pos);
+                    Ok(self.chunk(chunk_pos)?.$field_name_method(local_pos)?)
+                }
+            )*
+
+            // setters
+
+            paste! {
+                $(
+                    #[must_use]
+                    #[inline]
+                    pub fn [<set_ $field_name_method>](
+                        &mut self,
+                        pos: BlockPosition,
+                        value: $field_type
+                    ) -> Result<(), AccessError> {
+                        let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
+                        let local_pos: BlockPosition = Self::global_to_local_pos(pos);
+                        self.chunk_mut(chunk_pos)?.[<set_$field_name_method>](local_pos, value)?;
+                        Ok(())
+                    }
+                )*
+            }
+
+            /// Returns bool for if a chunk is found at the passed position.
+            pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
+                self.chunks.contains_key(&pos)
+            }
+
+            /// Sets new blank chunk at the passed position.
+            /// Returns an error if a chunk is already at the position.
+            #[must_use]
+            pub fn add_empty_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
+                match self.chunks.entry(pos) {
+                    dashmap::mapref::entry::Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
+                    dashmap::mapref::entry::Entry::Vacant(entry) => {
+                        let chunk: Chunk = Chunk::default();
+                        entry.insert(chunk);
+                        Ok(())
+                    }
+                }
+            }
+
+            /// Gets an iter of all chunk positions in a square around the passed origin position.
+            /// Radius of 0 results in 1 position.
+            pub fn positions_in_square(
+                origin: ChunkPosition,
+                radius: u32
+            ) -> impl Iterator<Item = ChunkPosition> {
+                let radius: i32 = radius as i32;
+                iproduct!(-radius..=radius, -radius..=radius).map(
+                    move |(x, y)| origin + ChunkPosition::new(x, y)
+                )
+            }
+
+            /// Returns all adjacent chunk offsets.
+            #[inline]
+            pub fn chunk_offsets(pos: ChunkPosition) -> impl Iterator<Item = ChunkPosition> {
+                CHUNK_ADJ_OFFSETS.iter().map(move |offset| { pos + offset })
+            }
+
+            /// Returns all adjacent block offsets.
+            #[inline]
+            pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
+                BLOCK_OFFSETS.iter().map(move |offset| { pos + offset })
+            }
+
+            /// Returns an iter for every global position found in the passed chunk positions.
+            pub fn coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
+                where I: Iterator<Item = ChunkPosition>
+            {
+                chunk_positions.flat_map(move |chunk_pos| Self::chunk_coords(chunk_pos))
+            }
+
+            /// Returns an iter for all block positions in the chunk offset by the chunk position.
+            /// Passing in zero offset returns local positions.
+            pub fn chunk_coords(offset: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
+                let base_block_pos: BlockPosition = Self::chunk_to_block_pos(offset);
+
+                iproduct!(0..CHUNK_WIDTH as i32, 0..CHUNK_HEIGHT as i32, 0..CHUNK_DEPTH as i32).map(
+                    move |(x, y, z)| base_block_pos + BlockPosition::new(x, y, z)
+                )
+            }
+
+            /// Converts a given chunk position to its zero corner block position.
+            #[inline]
+            pub const fn chunk_to_block_pos(pos: ChunkPosition) -> BlockPosition {
+                BlockPosition::new(pos.x * (CHUNK_WIDTH as i32), pos.y * (CHUNK_HEIGHT as i32), 0)
+            }
+
+            /// Gets the chunk position a block position falls into.
+            #[inline]
+            pub const fn block_to_chunk_pos(pos: BlockPosition) -> ChunkPosition {
+                ChunkPosition::new(pos.x.div_euclid(CHUNK_WIDTH as i32), pos.y.div_euclid(CHUNK_HEIGHT as i32))
+            }
+
+            /// Finds the remainder of a global position using chunk size.
+            #[inline]
+            pub const fn global_to_local_pos(pos: BlockPosition) -> BlockPosition {
+                BlockPosition::new(
+                    pos.x.rem_euclid(CHUNK_WIDTH as i32),
+                    pos.y.rem_euclid(CHUNK_HEIGHT as i32),
+                    pos.z
+                )
+            }
+
+            pub fn unload_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+                let (_, chunk): (ChunkPosition, Chunk) = self.chunks
+                    .remove(&pos)
+                    .ok_or(AccessError::ChunkAccess(ChunkAccessError::ChunkUnloaded(pos)))?;
+
+                fs::create_dir_all(CHUNKS_DIR)?;
+                let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
+                let mut file: fs::File = fs::File::create(&path)?;
+
+                let encoded_data = encode_to_vec(&chunk, config::standard())?;
+
+                file.write_all(&encoded_data)?;
+
+                Ok(())
+            }
+
+            #[must_use]
+            pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+                if self.is_chunk_at_pos(pos) {
+                    return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded(pos)));
+                }
+
+                let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
+                let encoded_data: Vec<u8> = fs::read(&path)?;
+
+                let (chunk, _): (Chunk, usize) = bincode_serde::decode_from_slice(
+                    &encoded_data,
+                    config::standard()
+                )?;
+
+                self.chunks.insert(pos, chunk);
+
+                Ok(())
+            }
+
+            #[inline]
+            fn chunk(
+                &self,
+                pos: ChunkPosition
+            ) -> Result<Ref<ChunkPosition, Chunk>, ChunkAccessError> {
+                self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
+            }
+
+            #[inline]
+            fn chunk_mut(
+                &mut self,
+                pos: ChunkPosition
+            ) -> Result<RefMut<ChunkPosition, Chunk>, ChunkAccessError> {
+                self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
+            }
+        }
+
+        // -- Chunk --
+
+        #[derive(Default, Serialize, Deserialize)]
+        pub struct Chunk {
+            subchunks: [Option<Subchunk>; NUM_SUBCHUNKS],
+        }
+
+        impl Chunk {
+            // getters
+
+            $(
+                #[inline]
+                pub fn $field_name_method(&self, pos: BlockPosition) -> Result<$field_type, BoundsError> {
+                    let index: usize = Self::subchunk_index(pos.z);
+
+                    let Some(subchunk_opt) = self.subchunks.get(index) else {
+                        return Err(BoundsError::OutOfBounds(pos));
+                    };
+
+                    subchunk_opt.as_ref().map_or(Ok(<$field_type as FieldType>::from_u64(0)), |s| {
+                        let sub_pos: BlockPosition = Self::local_to_sub(pos);
+                        Ok(s.$field_name_method(sub_pos)?)
+                    })
+                }
+            )*
+
+            // setters
+
+            paste! {
+                $(
+                    #[must_use]
+                    #[inline]
+                    pub fn [<set_ $field_name_method>](
+                        &mut self,
+                        pos: BlockPosition,
+                        value: $field_type
+                    ) -> Result<(), BoundsError> {
+                        let index: usize = Self::subchunk_index(pos.z);
+
+                        let Some(subchunk_opt) = self.subchunks.get_mut(index) else {
+                            return Err(BoundsError::OutOfBounds(pos));
+                        };
+
+                        if <$field_type as FieldType>::to_u64(value) == 0 && subchunk_opt.is_none() {
+                            return Ok(()); // return if placement is redundant
+                        }
+
+                        let subchunk: &mut Subchunk = subchunk_opt.get_or_insert_with(|| Subchunk::default());
+                        let sub_pos: BlockPosition = Self::local_to_sub(pos);
+
+                        subchunk.[<set_ $field_name_method>](sub_pos, value)?;
+
+                        if subchunk.is_empty() {
+                            *subchunk_opt = None; // set empty subchunks to none
+                        }
+
+                        Ok(())
+                    }
+                )*
+            }
+
+            #[inline]
+            const fn subchunk_index(pos_z: i32) -> usize {
+                (pos_z as usize).div_euclid(SUBCHUNK_DEPTH)
+            }
+
+            #[inline]
+            const fn local_to_sub(pos: BlockPosition) -> BlockPosition {
+                BlockPosition::new(pos.x, pos.y, pos.z.rem_euclid(SUBCHUNK_DEPTH as i32))
             }
         }
 
@@ -224,246 +452,21 @@ macro_rules! make_world {
             }
         }
 
-        // -- Chunk --
+        // -- SectionField --
 
-        #[derive(Default, Serialize, Deserialize)]
-        pub struct Chunk {
-            subchunks: [Option<Subchunk>; NUM_SUBCHUNKS],
+        #[derive(Clone, Copy, Serialize, Deserialize)]
+        pub enum SectionField {
+            $($field_name_enum),*,
+            #[doc(hidden)]
+            __COUNT
         }
 
-        impl Chunk {
-            // getters
+        impl SectionField {
+            pub const COUNT: usize = Self::__COUNT as usize;
+            const BITS_PER_ITEM_TABLE: &'static [u8] = &[$($bits_per_item),*];
 
-            $(
-                #[inline]
-                pub fn $field_name_method(&self, pos: BlockPosition) -> Result<$field_type, BoundsError> {
-                    let index: usize = Self::subchunk_index(pos.z);
-
-                    let Some(subchunk_opt) = self.subchunks.get(index) else {
-                        return Err(BoundsError::OutOfBounds(pos));
-                    };
-
-                    subchunk_opt.as_ref().map_or(Ok(<$field_type as FieldType>::from_u64(0)), |s| {
-                        let sub_pos: BlockPosition = Self::local_to_sub(pos);
-                        Ok(s.$field_name_method(sub_pos)?)
-                    })
-                }
-            )*
-
-            // setters
-
-            paste! {
-                $(
-                    #[must_use]
-                    #[inline]
-                    pub fn [<set_ $field_name_method>](
-                        &mut self,
-                        pos: BlockPosition,
-                        value: $field_type
-                    ) -> Result<(), BoundsError> {
-                        let index: usize = Self::subchunk_index(pos.z);
-
-                        let Some(subchunk_opt) = self.subchunks.get_mut(index) else {
-                            return Err(BoundsError::OutOfBounds(pos));
-                        };
-
-                        if <$field_type as FieldType>::to_u64(value) == 0 && subchunk_opt.is_none() {
-                            return Ok(()); // return if placement is redundant
-                        }
-
-                        let subchunk: &mut Subchunk = subchunk_opt.get_or_insert_with(|| Subchunk::default());
-                        let sub_pos: BlockPosition = Self::local_to_sub(pos);
-
-                        subchunk.[<set_ $field_name_method>](sub_pos, value)?;
-
-                        if subchunk.is_empty() {
-                            *subchunk_opt = None; // set empty subchunks to none
-                        }
-
-                        Ok(())
-                    }
-                )*
-            }
-
-            #[inline]
-            const fn subchunk_index(pos_z: i32) -> usize {
-                (pos_z as usize).div_euclid(SUBCHUNK_DEPTH)
-            }
-
-            #[inline]
-            const fn local_to_sub(pos: BlockPosition) -> BlockPosition {
-                BlockPosition::new(pos.x, pos.y, pos.z.rem_euclid(SUBCHUNK_DEPTH as i32))
-            }
-        }
-
-        // -- World --
-
-        /// Stores all chunks and marks dirty chunks.
-        /// Allows access and modification to them.
-        #[derive(Default)]
-        pub struct World {
-            chunks: HashMap<ChunkPosition, Chunk, BuildHasherDefault<AHasher>>,
-        }
-
-        impl World {
-            // getters
-
-            $(
-                #[inline]
-                pub fn $field_name_method(&self, pos: BlockPosition) -> Result<$field_type, AccessError> {
-                    let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
-                    let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-                    Ok(self.chunk(chunk_pos)?.$field_name_method(local_pos)?)
-                }
-            )*
-
-            // setters
-
-            paste! {
-                $(
-                    #[must_use]
-                    #[inline]
-                    pub fn [<set_ $field_name_method>](
-                        &mut self,
-                        pos: BlockPosition,
-                        value: $field_type
-                    ) -> Result<(), AccessError> {
-                        let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
-                        let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-                        self.chunk_mut(chunk_pos)?.[<set_$field_name_method>](local_pos, value)?;
-                        Ok(())
-                    }
-                )*
-            }
-
-            /// Returns bool for if a chunk is found at the passed position.
-            pub fn is_chunk_at_pos(&self, pos: ChunkPosition) -> bool {
-                self.chunks.contains_key(&pos)
-            }
-
-            /// Sets new blank chunk at the passed position.
-            /// Returns an error if a chunk is already at the position.
-            #[must_use]
-            pub fn add_empty_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
-                match self.chunks.entry(pos) {
-                    Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
-                    Entry::Vacant(entry) => {
-                        let chunk: Chunk = Chunk::default();
-                        entry.insert(chunk);
-                        Ok(())
-                    }
-                }
-            }
-
-            /// Gets an iter of all chunk positions in a square around the passed origin position.
-            /// Radius of 0 results in 1 position.
-            pub fn positions_in_square(
-                origin: ChunkPosition,
-                radius: u32
-            ) -> impl Iterator<Item = ChunkPosition> {
-                let radius: i32 = radius as i32;
-                iproduct!(-radius..=radius, -radius..=radius).map(
-                    move |(x, y)| origin + ChunkPosition::new(x, y)
-                )
-            }
-
-            /// Returns all adjacent chunk offsets.
-            #[inline]
-            pub fn chunk_offsets(pos: ChunkPosition) -> impl Iterator<Item = ChunkPosition> {
-                CHUNK_ADJ_OFFSETS.iter().map(move |offset| { pos + offset })
-            }
-
-            /// Returns all adjacent block offsets.
-            #[inline]
-            pub fn block_offsets(pos: BlockPosition) -> impl Iterator<Item = BlockPosition> {
-                BLOCK_OFFSETS.iter().map(move |offset| { pos + offset })
-            }
-
-            /// Returns an iter for every global position found in the passed chunk positions.
-            pub fn coords_in_chunks<I>(chunk_positions: I) -> impl Iterator<Item = BlockPosition>
-                where I: Iterator<Item = ChunkPosition>
-            {
-                chunk_positions.flat_map(move |chunk_pos| Self::chunk_coords(chunk_pos))
-            }
-
-            /// Returns an iter for all block positions in the chunk offset by the chunk position.
-            /// Passing in zero offset returns local positions.
-            pub fn chunk_coords(offset: ChunkPosition) -> impl Iterator<Item = BlockPosition> {
-                let base_block_pos: BlockPosition = Self::chunk_to_block_pos(offset);
-
-                iproduct!(0..CHUNK_WIDTH as i32, 0..CHUNK_HEIGHT as i32, 0..CHUNK_DEPTH as i32).map(
-                    move |(x, y, z)| base_block_pos + BlockPosition::new(x, y, z)
-                )
-            }
-
-            /// Converts a given chunk position to its zero corner block position.
-            #[inline]
-            pub const fn chunk_to_block_pos(pos: ChunkPosition) -> BlockPosition {
-                BlockPosition::new(pos.x * (CHUNK_WIDTH as i32), pos.y * (CHUNK_HEIGHT as i32), 0)
-            }
-
-            /// Gets the chunk position a block position falls into.
-            #[inline]
-            pub const fn block_to_chunk_pos(pos: BlockPosition) -> ChunkPosition {
-                ChunkPosition::new(pos.x.div_euclid(CHUNK_WIDTH as i32), pos.y.div_euclid(CHUNK_HEIGHT as i32))
-            }
-
-            /// Finds the remainder of a global position using chunk size.
-            #[inline]
-            pub const fn global_to_local_pos(pos: BlockPosition) -> BlockPosition {
-                BlockPosition::new(
-                    pos.x.rem_euclid(CHUNK_WIDTH as i32),
-                    pos.y.rem_euclid(CHUNK_HEIGHT as i32),
-                    pos.z
-                )
-            }
-
-            pub fn unload_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
-                let chunk: Chunk = self.chunks
-                    .remove(&pos)
-                    .ok_or(AccessError::ChunkAccess(ChunkAccessError::ChunkUnloaded(pos)))?;
-
-                fs::create_dir_all(CHUNKS_DIR)?;
-                let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
-                let mut file: fs::File = fs::File::create(&path)?;
-
-                let encoded_data = encode_to_vec(&chunk, config::standard())?;
-
-                file.write_all(&encoded_data)?;
-
-                Ok(())
-            }
-
-            #[must_use]
-            pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
-                if self.is_chunk_at_pos(pos) {
-                    return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded(pos)));
-                }
-
-                let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
-                let encoded_data: Vec<u8> = fs::read(&path)?;
-
-                let (chunk, _): (Chunk, usize) = bincode_serde::decode_from_slice(
-                    &encoded_data,
-                    config::standard()
-                )?;
-
-                self.chunks.insert(pos, chunk);
-
-                Ok(())
-            }
-
-            #[inline]
-            fn chunk(&self, pos: ChunkPosition) -> Result<&Chunk, ChunkAccessError> {
-                self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
-            }
-
-            #[inline]
-            fn chunk_mut(
-                &mut self,
-                pos: ChunkPosition
-            ) -> Result<&mut Chunk, ChunkAccessError> {
-                self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
+            pub const fn bits(&self) -> u8 {
+                Self::BITS_PER_ITEM_TABLE[*self as usize]
             }
         }
     };

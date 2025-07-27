@@ -1,5 +1,5 @@
 [package]
-name = "floralcraft_terrain"
+name = "terrain_data"
 version = "0.1.0"
 edition = "2024"
 
@@ -12,3 +12,4 @@ ahash = "0.8.12"
 bincode = { version = "2.0.1", features = ["derive", "serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 paste = "1.0.15"
+dashmap = "6.1.0"
