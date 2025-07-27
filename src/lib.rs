@@ -110,10 +110,10 @@ macro_rules! make_world {
 
             const SUBCHUNK_DEPTH: usize = $subchunk_depth as usize;
             const NUM_SUBCHUNKS: usize = $num_subchunks as usize;
-            const CHUNK_WIDTH: usize = $chunk_width as usize;
-            const CHUNK_HEIGHT: usize = $chunk_height as usize;
-            const CHUNK_DEPTH: usize = SUBCHUNK_DEPTH * NUM_SUBCHUNKS;
-            const CHUNK_VOLUME: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
+            pub const CHUNK_WIDTH: usize = $chunk_width as usize;
+            pub const CHUNK_HEIGHT: usize = $chunk_height as usize;
+            pub const CHUNK_DEPTH: usize = SUBCHUNK_DEPTH * NUM_SUBCHUNKS;
+            pub const CHUNK_VOLUME: usize = CHUNK_WIDTH * CHUNK_HEIGHT * CHUNK_DEPTH;
 
             // -- World --
 
