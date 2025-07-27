@@ -40,9 +40,10 @@ macro_rules! make_world {
         use std::{
             hash::BuildHasherDefault,
             path::PathBuf,
+            io as std_io,
         };
-        use std::{
-            io::{ Write, self },
+        use tokio::{
+            io::AsyncWriteExt,
             fs,
         };
         use bincode::{
@@ -119,7 +120,7 @@ macro_rules! make_world {
 
         #[derive(Debug, Error)]
         pub enum ChunkStoreError {
-            #[error(transparent)] Io(#[from] io::Error),
+            #[error(transparent)] Io(#[from] std_io::Error),
             #[error(transparent)] Access(#[from] AccessError),
             #[error(transparent)] ChunkOverwrite(#[from] ChunkOverwriteError),
             #[error(transparent)] Encode(#[from] EncodeError),
@@ -154,16 +155,33 @@ macro_rules! make_world {
                     #[must_use]
                     #[inline]
                     pub fn [<set_ $field_name_method>](
-                        &mut self,
+                        &self,
                         pos: BlockPosition,
                         value: $field_type
                     ) -> Result<(), AccessError> {
                         let chunk_pos: ChunkPosition = Self::block_to_chunk_pos(pos);
                         let local_pos: BlockPosition = Self::global_to_local_pos(pos);
-                        self.chunk_mut(chunk_pos)?.[<set_$field_name_method>](local_pos, value)?;
+                        self.chunk_mut(chunk_pos)?.value_mut()
+                            .[<set_$field_name_method>](local_pos, value)?;
                         Ok(())
                     }
                 )*
+            }
+
+            #[inline]
+            pub fn chunk(
+                &self,
+                pos: ChunkPosition
+            ) -> Result<Ref<ChunkPosition, Chunk>, ChunkAccessError> {
+                self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
+            }
+
+            #[inline]
+            pub fn chunk_mut(
+                &self,
+                pos: ChunkPosition
+            ) -> Result<RefMut<ChunkPosition, Chunk>, ChunkAccessError> {
+                self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
             }
 
             /// Returns bool for if a chunk is found at the passed position.
@@ -174,7 +192,7 @@ macro_rules! make_world {
             /// Sets new blank chunk at the passed position.
             /// Returns an error if a chunk is already at the position.
             #[must_use]
-            pub fn add_empty_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
+            pub fn add_empty_chunk(&self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
                 match self.chunks.entry(pos) {
                     dashmap::mapref::entry::Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
                     dashmap::mapref::entry::Entry::Vacant(entry) => {
@@ -248,30 +266,30 @@ macro_rules! make_world {
                 )
             }
 
-            pub fn unload_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+            pub async fn unload_chunk(&self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
                 let (_, chunk): (ChunkPosition, Chunk) = self.chunks
                     .remove(&pos)
                     .ok_or(AccessError::ChunkAccess(ChunkAccessError::ChunkUnloaded(pos)))?;
 
-                fs::create_dir_all(CHUNKS_DIR)?;
+                fs::create_dir_all(CHUNKS_DIR).await?;
                 let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
-                let mut file: fs::File = fs::File::create(&path)?;
+                let mut file: fs::File = fs::File::create(&path).await?;
 
                 let encoded_data = encode_to_vec(&chunk, config::standard())?;
 
-                file.write_all(&encoded_data)?;
+                file.write_all(&encoded_data).await?;
 
                 Ok(())
             }
 
             #[must_use]
-            pub fn load_chunk(&mut self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
+            pub async fn load_chunk(&self, pos: ChunkPosition) -> Result<(), ChunkStoreError> {
                 if self.is_chunk_at_pos(pos) {
                     return Err(ChunkStoreError::ChunkOverwrite(ChunkOverwriteError::ChunkAlreadyLoaded(pos)));
                 }
 
                 let path: PathBuf = PathBuf::from(CHUNKS_DIR).join(format!("{}_{}.bin", pos.x, pos.y));
-                let encoded_data: Vec<u8> = fs::read(&path)?;
+                let encoded_data: Vec<u8> = fs::read(&path).await?;
 
                 let (chunk, _): (Chunk, usize) = bincode_serde::decode_from_slice(
                     &encoded_data,
@@ -281,22 +299,6 @@ macro_rules! make_world {
                 self.chunks.insert(pos, chunk);
 
                 Ok(())
-            }
-
-            #[inline]
-            fn chunk(
-                &self,
-                pos: ChunkPosition
-            ) -> Result<Ref<ChunkPosition, Chunk>, ChunkAccessError> {
-                self.chunks.get(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
-            }
-
-            #[inline]
-            fn chunk_mut(
-                &mut self,
-                pos: ChunkPosition
-            ) -> Result<RefMut<ChunkPosition, Chunk>, ChunkAccessError> {
-                self.chunks.get_mut(&pos).ok_or(ChunkAccessError::ChunkUnloaded(pos))
             }
         }
 
@@ -475,6 +477,7 @@ macro_rules! make_world {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     make_world! {
         chunk_width: 16,
@@ -518,9 +521,9 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_get_and_set_world() -> Result<(), AccessError> {
-        let mut world: World = World::default();
+    #[tokio::test]
+    async fn test_get_and_set_world() -> Result<(), AccessError> {
+        let world: Arc<World> = Arc::new(World::default());
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
         world.add_empty_chunk(chunk_pos).unwrap();
 
@@ -537,23 +540,76 @@ mod tests {
         Ok(())
     }
 
-    #[test]
-    fn test_save_load_chunk() -> Result<(), ChunkStoreError> {
-        let mut world: World = World::default();
+    #[tokio::test]
+    async fn test_save_load_chunk() -> Result<(), ChunkStoreError> {
+        let world: Arc<World> = Arc::new(World::default());
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
         let pos: BlockPosition = BlockPosition::new(1, 2, 3);
 
         world.add_empty_chunk(chunk_pos)?;
         world.set_block(pos, 3)?;
 
-        world.unload_chunk(chunk_pos)?;
+        world.unload_chunk(chunk_pos).await?;
 
         assert!(world.block(pos).is_err());
 
-        world.load_chunk(chunk_pos)?;
+        world.load_chunk(chunk_pos).await?;
 
         let block: u8 = world.block(pos)?;
         assert!(block == 3);
+
+        if std::path::Path::new(CHUNKS_DIR).exists() {
+            fs::remove_dir_all(CHUNKS_DIR).await.unwrap();
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_set_block_and_add_chunk() -> Result<
+        (),
+        Box<dyn std::error::Error + Send>
+    > {
+        tokio::fs::create_dir_all(CHUNKS_DIR).await.unwrap();
+
+        let world: Arc<World> = Arc::new(World::default());
+
+        let world_clone1: Arc<World> = Arc::clone(&world);
+        let handle1 = tokio::spawn(async move {
+            let chunk_pos: ChunkPosition = ChunkPosition::ZERO;
+            world_clone1.add_empty_chunk(chunk_pos).unwrap();
+
+            for pos in World::chunk_coords(chunk_pos) {
+                let value: u8 = (pos.x % 255) as u8;
+                world_clone1.set_block(pos, value).unwrap();
+            }
+
+            Ok::<(), Box<dyn std::error::Error + Send>>(())
+        });
+
+        let world_clone2: Arc<World> = Arc::clone(&world);
+        let handle2 = tokio::spawn(async move {
+            let chunk_pos: ChunkPosition = ChunkPosition::new(1, 0);
+            world_clone2.add_empty_chunk(chunk_pos).unwrap();
+
+            for pos in World::chunk_coords(chunk_pos) {
+                let value: u8 = ((pos.x % 255) as u8) + 1;
+                world_clone2.set_block(pos, value).unwrap();
+            }
+
+            Ok::<(), Box<dyn std::error::Error + Send>>(())
+        });
+
+        let _ = handle1.await.map_err(|e| eprintln!("{}", e)).unwrap();
+        let _ = handle2.await.map_err(|e| eprintln!("{}", e)).unwrap();
+
+        let pos: BlockPosition = BlockPosition::new(5, 5, 5);
+
+        assert_eq!(world.block(pos).unwrap(), 5);
+
+        if std::path::Path::new(CHUNKS_DIR).exists() {
+            fs::remove_dir_all(CHUNKS_DIR).await.unwrap();
+        }
 
         Ok(())
     }
