@@ -80,6 +80,7 @@ macro_rules! make_world {
                 dashmap::{
                     DashMap,
                     mapref::one::{Ref, RefMut},
+                    mapref::entry::Entry,
                 },
                 itertools::iproduct,
                 paste::paste,
@@ -179,8 +180,8 @@ macro_rules! make_world {
                 #[must_use]
                 pub fn add_empty_chunk(&self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
                     match self.chunks.entry(pos) {
-                        dashmap::mapref::entry::Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
-                        dashmap::mapref::entry::Entry::Vacant(entry) => {
+                        Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
+                        Entry::Vacant(entry) => {
                             let chunk: Chunk = Chunk::default();
                             entry.insert(chunk);
                             Ok(())
