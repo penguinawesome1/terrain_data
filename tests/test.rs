@@ -11,7 +11,8 @@ world! {
     Exposed r#as is_exposed: bool = 1,
 }
 
-fn main() -> Result<(), AccessError> {
+#[test]
+fn test_all() -> Result<(), AccessError> {
     let world: Arc<World> = Arc::new(World::default());
     let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
     world.add_empty_chunk(chunk_pos).unwrap();
