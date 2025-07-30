@@ -542,8 +542,6 @@ mod tests {
     #[tokio::test]
     async fn test_concurrent_set_block_and_add_chunk()
     -> Result<(), Box<dyn std::error::Error + Send>> {
-        use World;
-
         tokio::fs::create_dir_all(CHUNKS_DIR).await.unwrap();
 
         let world: Arc<World> = Arc::new(World::default());
