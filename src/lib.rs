@@ -41,7 +41,7 @@ pub mod __internal_prelude {
 /// fn main() -> Result<(), AccessError> {
 ///     let world: Arc<World> = Arc::new(World::default());
 ///     let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
-///     world.add_empty_chunk(chunk_pos).unwrap();
+///     world.add_chunk(chunk_pos, None).unwrap();
 ///
 ///     let pos_1: BlockPosition = BlockPosition::new(15, 1, 200);
 ///     let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
@@ -177,15 +177,14 @@ macro_rules! world {
                     self.chunks.contains_key(&pos)
                 }
 
-                /// Sets new blank chunk at the passed position.
+                /// Sets new given chunk at the passed position.
                 /// Returns an error if a chunk is already at the position.
-                #[must_use]
-                pub fn add_empty_chunk(&self, pos: ChunkPosition) -> Result<(), ChunkOverwriteError> {
+                #[inline]
+                pub fn add_chunk(&self, pos: ChunkPosition, chunk: Option<Chunk>) -> Result<(), ChunkOverwriteError> {
                     match self.chunks.entry(pos) {
                         Entry::Occupied(_) => Err(ChunkOverwriteError::ChunkAlreadyLoaded(pos)),
                         Entry::Vacant(entry) => {
-                            let chunk: Chunk = Chunk::default();
-                            entry.insert(chunk);
+                            entry.insert(chunk.unwrap_or(Chunk::default()));
                             Ok(())
                         }
                     }
@@ -499,7 +498,7 @@ mod tests {
     async fn test_get_and_set_world() -> Result<(), AccessError> {
         let world: Arc<World> = Arc::new(World::default());
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
-        world.add_empty_chunk(chunk_pos).unwrap();
+        world.add_chunk(chunk_pos, None).unwrap();
 
         let pos_1: BlockPosition = BlockPosition::new(15, 1, 200);
         let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
@@ -520,7 +519,7 @@ mod tests {
         let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
         let pos: BlockPosition = BlockPosition::new(1, 2, 3);
 
-        world.add_empty_chunk(chunk_pos)?;
+        world.add_chunk(chunk_pos, None)?;
         world.set_block(pos, 3)?;
 
         world.unload_chunk(chunk_pos).await?;
@@ -549,7 +548,7 @@ mod tests {
         let world_clone1: Arc<World> = Arc::clone(&world);
         let handle1 = tokio::spawn(async move {
             let chunk_pos: ChunkPosition = ChunkPosition::ZERO;
-            world_clone1.add_empty_chunk(chunk_pos).unwrap();
+            world_clone1.add_chunk(chunk_pos, None).unwrap();
 
             for pos in World::chunk_coords(chunk_pos) {
                 let value: u8 = (pos.x % 255) as u8;
@@ -562,7 +561,7 @@ mod tests {
         let world_clone2: Arc<World> = Arc::clone(&world);
         let handle2 = tokio::spawn(async move {
             let chunk_pos: ChunkPosition = ChunkPosition::new(1, 0);
-            world_clone2.add_empty_chunk(chunk_pos).unwrap();
+            world_clone2.add_chunk(chunk_pos, None).unwrap();
 
             for pos in World::chunk_coords(chunk_pos) {
                 let value: u8 = ((pos.x % 255) as u8) + 1;

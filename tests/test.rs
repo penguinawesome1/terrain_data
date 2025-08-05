@@ -15,7 +15,7 @@ world! {
 fn test_all() -> Result<(), AccessError> {
     let world: Arc<World> = Arc::new(World::default());
     let chunk_pos: ChunkPosition = ChunkPosition::new(0, 0);
-    world.add_empty_chunk(chunk_pos).unwrap();
+    world.add_chunk(chunk_pos, None).unwrap();
 
     let pos_1: BlockPosition = BlockPosition::new(15, 1, 200);
     let pos_2: BlockPosition = BlockPosition::new(3, 0, 2);
