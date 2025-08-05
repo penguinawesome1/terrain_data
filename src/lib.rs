@@ -179,6 +179,7 @@ macro_rules! world {
 
                 /// Sets new given chunk at the passed position.
                 /// Returns an error if a chunk is already at the position.
+                #[must_use]
                 #[inline]
                 pub fn add_chunk(&self, pos: ChunkPosition, chunk: Option<Chunk>) -> Result<(), ChunkOverwriteError> {
                     match self.chunks.entry(pos) {
@@ -585,3 +586,4 @@ mod tests {
         Ok(())
     }
 }
+
